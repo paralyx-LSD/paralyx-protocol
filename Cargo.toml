@@ -1,0 +1,9 @@
+[workspace]
+members = [
+    "contracts/s_token",
+    "contracts/price_oracle", 
+    "contracts/lending_pool",
+]
+
+[workspace.dependencies]
+soroban-sdk = "22.0.8" 

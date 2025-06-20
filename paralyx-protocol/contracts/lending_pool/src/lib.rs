@@ -1,325 +1,381 @@
 #![no_std]
 
 use soroban_sdk::{
-    contract, contractimpl, contracttype, token, Address, Env, Symbol, symbol_short, I128
+    contract, contractimpl, contracttype, Address, Env, Symbol,
+    symbol_short
 };
 
 pub(crate) const DAY_IN_LEDGERS: u32 = 17280;
 pub(crate) const INSTANCE_BUMP_AMOUNT: u32 = 7 * DAY_IN_LEDGERS;
 pub(crate) const INSTANCE_LIFETIME_THRESHOLD: u32 = INSTANCE_BUMP_AMOUNT - DAY_IN_LEDGERS;
 
+// Storage keys
 #[derive(Clone)]
 #[contracttype]
 pub enum DataKey {
     Admin,
+    STokenContract,
     PriceOracle,
-    // Asset configuration
-    Asset(Symbol),              // symbol -> asset contract address
-    SToken(Symbol),             // symbol -> sToken contract address
-    
-    // Pool state
-    TotalLiquidity(Symbol),     // symbol -> total deposited amount
-    TotalBorrows(Symbol),       // symbol -> total borrowed amount
-    
-    // User positions
-    UserCollateral(Address, Symbol), // (user, asset) -> collateral amount
-    UserBorrow(Address, Symbol),     // (user, asset) -> borrowed amount
-    
-    // Risk parameters
-    LtvRatio(Symbol),           // symbol -> loan-to-value ratio (basis points)
-    LiquidationThreshold(Symbol), // symbol -> liquidation threshold (basis points)
-    
-    // Interest rates (simplified - fixed for now)
-    BorrowRate(Symbol),         // symbol -> annual borrow rate (basis points)
-    SupplyRate(Symbol),         // symbol -> annual supply rate (basis points)
-    
-    // Timestamps for interest accrual
-    LastUpdateTime(Symbol),     // symbol -> last interest update timestamp
+    Asset(Symbol),                    // Asset configuration
+    UserCollateral(Address, Symbol),  // User's collateral amount for an asset
+    UserDebt(Address, Symbol),       // User's debt amount for an asset
+    TotalSupplied(Symbol),           // Total amount supplied to the pool
+    TotalBorrowed(Symbol),           // Total amount borrowed from the pool
+    UtilizationRate(Symbol),         // Current utilization rate (borrowed/supplied)
+    BorrowRate(Symbol),              // Current borrow interest rate
+    SupplyRate(Symbol),              // Current supply interest rate
+    LastUpdate(Symbol),              // Last update timestamp for interest accrual
 }
 
-#[derive(Clone)]
+// Asset configuration
 #[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AssetConfig {
-    pub asset_address: Address,
-    pub s_token_address: Address,
-    pub ltv_ratio: u32,              // basis points (6000 = 60%)
-    pub liquidation_threshold: u32,   // basis points (8000 = 80%)
-    pub borrow_rate: u32,            // basis points (500 = 5% annually)
-    pub supply_rate: u32,            // basis points (300 = 3% annually)
+    pub ltv_ratio: u32,              // Loan-to-value ratio (e.g., 6000 = 60%)
+    pub liquidation_threshold: u32,   // Liquidation threshold (e.g., 8000 = 80%)
+    pub reserve_factor: u32,         // Reserve factor for protocol fees (e.g., 1000 = 10%)
+    pub is_active: bool,             // Whether asset is active for lending/borrowing
+    pub is_collateral: bool,         // Whether asset can be used as collateral
+}
+
+// User account data
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct UserAccountData {
+    pub total_collateral_usd: i128,
+    pub total_debt_usd: i128,
+    pub ltv: u32,
+    pub health_factor: i128,
 }
 
 #[contract]
 pub struct LendingPool;
 
-#[contractimpl]
+#[contractimpl] 
 impl LendingPool {
     /// Initialize the lending pool
-    pub fn initialize(env: Env, admin: Address, price_oracle: Address) {
+    pub fn initialize(
+        env: Env,
+        admin: Address,
+        s_token_contract: Address,
+        price_oracle: Address
+    ) {
         if env.storage().instance().has(&DataKey::Admin) {
             panic!("already initialized");
         }
 
         env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage().instance().set(&DataKey::STokenContract, &s_token_contract);
         env.storage().instance().set(&DataKey::PriceOracle, &price_oracle);
     }
 
-    /// Add a new asset to the lending pool
-    pub fn add_asset(
-        env: Env, 
-        asset_symbol: Symbol,
-        config: AssetConfig
+    /// Configure an asset for lending and borrowing
+    pub fn configure_asset(
+        env: Env,
+        asset: Symbol,
+        ltv_ratio: u32,
+        liquidation_threshold: u32,
+        reserve_factor: u32
     ) {
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
 
-        env.storage().instance().set(&DataKey::Asset(asset_symbol.clone()), &config.asset_address);
-        env.storage().instance().set(&DataKey::SToken(asset_symbol.clone()), &config.s_token_address);
-        env.storage().instance().set(&DataKey::LtvRatio(asset_symbol.clone()), &config.ltv_ratio);
-        env.storage().instance().set(&DataKey::LiquidationThreshold(asset_symbol.clone()), &config.liquidation_threshold);
-        env.storage().instance().set(&DataKey::BorrowRate(asset_symbol.clone()), &config.borrow_rate);
-        env.storage().instance().set(&DataKey::SupplyRate(asset_symbol.clone()), &config.supply_rate);
-        
-        // Initialize pool state
-        env.storage().instance().set(&DataKey::TotalLiquidity(asset_symbol.clone()), &I128::new(&env, 0));
-        env.storage().instance().set(&DataKey::TotalBorrows(asset_symbol.clone()), &I128::new(&env, 0));
-        env.storage().instance().set(&DataKey::LastUpdateTime(asset_symbol.clone()), &env.ledger().timestamp());
+        if ltv_ratio > 9500 || liquidation_threshold > 9500 || reserve_factor > 5000 {
+            panic!("invalid configuration parameters");
+        }
 
-        env.events().publish((symbol_short!("asset_add"), asset_symbol), config);
+        let config = AssetConfig {
+            ltv_ratio,
+            liquidation_threshold,
+            reserve_factor,
+            is_active: true,
+            is_collateral: true,
+        };
+
+        env.storage().instance().set(&DataKey::Asset(asset.clone()), &config);
+        env.storage().instance().set(&DataKey::TotalSupplied(asset.clone()), &0i128);
+        env.storage().instance().set(&DataKey::TotalBorrowed(asset.clone()), &0i128);
+        env.storage().instance().set(&DataKey::UtilizationRate(asset.clone()), &0u32);
+        env.storage().instance().set(&DataKey::BorrowRate(asset.clone()), &5_0000000i128); // 5% base rate
+        env.storage().instance().set(&DataKey::SupplyRate(asset.clone()), &1_0000000i128); // 1% base rate
+        env.storage().instance().set(&DataKey::LastUpdate(asset.clone()), &env.ledger().timestamp());
+
+        env.events().publish((symbol_short!("asset_cfg"), asset), config);
     }
 
-    /// Deposit assets to the pool and receive sTokens
-    pub fn deposit(env: Env, user: Address, asset_symbol: Symbol, amount: I128) {
+    /// Deposit asset to earn interest (supply to pool)
+    pub fn deposit(env: Env, user: Address, asset: Symbol, amount: i128) {
         user.require_auth();
 
-        if amount <= I128::new(&env, 0) {
+        let config: AssetConfig = env.storage().instance()
+            .get(&DataKey::Asset(asset.clone()))
+            .unwrap_or_else(|| panic!("asset not configured"));
+
+        if !config.is_active {
+            panic!("asset not active");
+        }
+
+        if amount <= 0 {
             panic!("amount must be positive");
         }
 
-        let asset_address: Address = env.storage().instance().get(&DataKey::Asset(asset_symbol.clone())).unwrap();
-        let s_token_address: Address = env.storage().instance().get(&DataKey::SToken(asset_symbol.clone())).unwrap();
+        // Update interest rates
+        Self::update_interest_rates(env.clone(), asset.clone());
 
-        // Transfer tokens from user to contract
-        let token_client = token::Client::new(&env, &asset_address);
-        token_client.transfer(&user, &env.current_contract_address(), &amount);
+        // Update total supplied
+        let mut total_supplied: i128 = env.storage().instance()
+            .get(&DataKey::TotalSupplied(asset.clone()))
+            .unwrap_or(0i128);
+        total_supplied = total_supplied + amount;
+        env.storage().instance().set(&DataKey::TotalSupplied(asset.clone()), &total_supplied);
 
-        // Update total liquidity
-        let mut total_liquidity: I128 = env.storage().instance().get(&DataKey::TotalLiquidity(asset_symbol.clone())).unwrap_or(I128::new(&env, 0));
-        total_liquidity = total_liquidity.add(&amount);
-        env.storage().instance().set(&DataKey::TotalLiquidity(asset_symbol.clone()), &total_liquidity);
+        // Calculate sTokens to mint (1:1 for now, can be enhanced with exchange rate)
+        let s_token_amount = amount;
 
-        // Mint sTokens to user (1:1 for now - can be improved with interest accrual)
-        env.invoke_contract::<()>(&s_token_address, &symbol_short!("mint"), soroban_sdk::vec![&env, user.clone().into_val(&env), amount.into_val(&env)]);
+        // Call sToken contract to mint tokens
+        // Note: In real implementation, this would be a cross-contract call
+        // For now, we'll just emit an event indicating the mint should happen
+        env.events().publish((symbol_short!("mint_req"), user.clone(), asset.clone()), s_token_amount);
 
-        env.events().publish((symbol_short!("deposit"), user, asset_symbol), amount);
+        env.events().publish((symbol_short!("deposit"), user, asset), amount);
     }
 
-    /// Withdraw assets from the pool by burning sTokens
-    pub fn withdraw(env: Env, user: Address, asset_symbol: Symbol, s_token_amount: I128) {
+    /// Withdraw deposited asset (redeem sTokens)
+    pub fn withdraw(env: Env, user: Address, asset: Symbol, amount: i128) {
         user.require_auth();
 
-        if s_token_amount <= I128::new(&env, 0) {
+        let config: AssetConfig = env.storage().instance()
+            .get(&DataKey::Asset(asset.clone()))
+            .unwrap_or_else(|| panic!("asset not configured"));
+
+        if !config.is_active {
+            panic!("asset not active");
+        }
+
+        if amount <= 0 {
             panic!("amount must be positive");
         }
 
-        let asset_address: Address = env.storage().instance().get(&DataKey::Asset(asset_symbol.clone())).unwrap();
-        let s_token_address: Address = env.storage().instance().get(&DataKey::SToken(asset_symbol.clone())).unwrap();
+        // Check if user has enough sTokens (simplified check)
+        let total_supplied: i128 = env.storage().instance()
+            .get(&DataKey::TotalSupplied(asset.clone()))
+            .unwrap_or(0i128);
 
-        // Convert sTokens to underlying asset amount (1:1 for now)
-        let underlying_amount = s_token_amount; // TODO: Apply exchange rate
-
-        // Check available liquidity
-        let total_liquidity: I128 = env.storage().instance().get(&DataKey::TotalLiquidity(asset_symbol.clone())).unwrap_or(I128::new(&env, 0));
-        let total_borrows: I128 = env.storage().instance().get(&DataKey::TotalBorrows(asset_symbol.clone())).unwrap_or(I128::new(&env, 0));
-        let available_liquidity = total_liquidity.sub(&total_borrows);
-
-        if underlying_amount > available_liquidity {
+        if amount > total_supplied {
             panic!("insufficient liquidity");
         }
 
-        // Burn sTokens from user  
-        // Note: In a real implementation, this would call the sToken contract's burn function
+        // Update interest rates
+        Self::update_interest_rates(env.clone(), asset.clone());
 
-        // Update total liquidity
-        let new_total_liquidity = total_liquidity.sub(&underlying_amount);
-        env.storage().instance().set(&DataKey::TotalLiquidity(asset_symbol.clone()), &new_total_liquidity);
+        // Update total supplied
+        let new_total_supplied = total_supplied - amount;
+        env.storage().instance().set(&DataKey::TotalSupplied(asset.clone()), &new_total_supplied);
 
-        // Transfer underlying tokens to user
-        let token_client = token::Client::new(&env, &asset_address);
-        token_client.transfer(&env.current_contract_address(), &user, &underlying_amount);
+        // Calculate sTokens to burn
+        let s_token_amount = amount;
 
-        env.events().publish((symbol_short!("withdraw"), user, asset_symbol), underlying_amount);
+        // Call sToken contract to burn tokens  
+        // Note: In real implementation, this would be a cross-contract call
+        env.events().publish((symbol_short!("burn_req"), user.clone(), asset.clone()), s_token_amount);
+
+        env.events().publish((symbol_short!("withdraw"), user, asset), amount);
     }
 
-    /// Use deposited assets as collateral to borrow other assets
-    pub fn borrow(env: Env, user: Address, collateral_symbol: Symbol, borrow_symbol: Symbol, borrow_amount: I128) {
+    /// Deposit asset as collateral
+    pub fn deposit_collateral(env: Env, user: Address, asset: Symbol, amount: i128) {
         user.require_auth();
 
-        if borrow_amount <= I128::new(&env, 0) {
+        let config: AssetConfig = env.storage().instance()
+            .get(&DataKey::Asset(asset.clone()))
+            .unwrap_or_else(|| panic!("asset not configured"));
+
+        if !config.is_collateral {
+            panic!("asset cannot be used as collateral");
+        }
+
+        if amount <= 0 {
             panic!("amount must be positive");
         }
 
-        // Check if user has sufficient collateral
-        let user_collateral = Self::get_user_collateral(env.clone(), user.clone(), collateral_symbol.clone());
-        if user_collateral <= I128::new(&env, 0) {
-            panic!("no collateral deposited");
-        }
+        // Update user's collateral
+        let mut user_collateral: i128 = env.storage().instance()
+            .get(&DataKey::UserCollateral(user.clone(), asset.clone()))
+            .unwrap_or(0i128);
+        user_collateral = user_collateral + amount;
+        env.storage().instance().set(&DataKey::UserCollateral(user.clone(), asset.clone()), &user_collateral);
 
-        // Calculate borrowing power
-        let max_borrow_usd = Self::calculate_max_borrow(env.clone(), user.clone(), collateral_symbol.clone(), borrow_symbol.clone());
-        let borrow_value_usd = Self::get_asset_value_usd(env.clone(), borrow_symbol.clone(), borrow_amount);
-
-        if borrow_value_usd > max_borrow_usd {
-            panic!("insufficient collateral");
-        }
-
-        // Check available liquidity in the borrow asset pool
-        let total_liquidity: I128 = env.storage().instance().get(&DataKey::TotalLiquidity(borrow_symbol.clone())).unwrap_or(I128::new(&env, 0));
-        let total_borrows: I128 = env.storage().instance().get(&DataKey::TotalBorrows(borrow_symbol.clone())).unwrap_or(I128::new(&env, 0));
-        let available_liquidity = total_liquidity.sub(&total_borrows);
-
-        if borrow_amount > available_liquidity {
-            panic!("insufficient pool liquidity");
-        }
-
-        // Update user's borrow position
-        let current_borrow: I128 = env.storage().instance().get(&DataKey::UserBorrow(user.clone(), borrow_symbol.clone())).unwrap_or(I128::new(&env, 0));
-        let new_borrow = current_borrow.add(&borrow_amount);
-        env.storage().instance().set(&DataKey::UserBorrow(user.clone(), borrow_symbol.clone()), &new_borrow);
-
-        // Update total borrows
-        let new_total_borrows = total_borrows.add(&borrow_amount);
-        env.storage().instance().set(&DataKey::TotalBorrows(borrow_symbol.clone()), &new_total_borrows);
-
-        // Transfer borrowed tokens to user
-        let borrow_asset_address: Address = env.storage().instance().get(&DataKey::Asset(borrow_symbol.clone())).unwrap();
-        let token_client = token::Client::new(&env, &borrow_asset_address);
-        token_client.transfer(&env.current_contract_address(), &user, &borrow_amount);
-
-        env.events().publish((symbol_short!("borrow"), user.clone(), borrow_symbol.clone()), borrow_amount);
+        env.events().publish((symbol_short!("coll_dep"), user, asset), amount);
     }
 
-    /// Repay borrowed assets
-    pub fn repay(env: Env, user: Address, asset_symbol: Symbol, repay_amount: I128) {
+    /// Borrow asset against collateral
+    pub fn borrow(env: Env, user: Address, asset: Symbol, amount: i128) {
         user.require_auth();
 
-        if repay_amount <= I128::new(&env, 0) {
+        let config: AssetConfig = env.storage().instance()
+            .get(&DataKey::Asset(asset.clone()))
+            .unwrap_or_else(|| panic!("asset not configured"));
+
+        if !config.is_active {
+            panic!("asset not active for borrowing");
+        }
+
+        if amount <= 0 {
             panic!("amount must be positive");
         }
 
-        let current_borrow: I128 = env.storage().instance().get(&DataKey::UserBorrow(user.clone(), asset_symbol.clone())).unwrap_or(I128::new(&env, 0));
-        
-        if repay_amount > current_borrow {
-            panic!("repay amount exceeds debt");
+        // Check if there's enough liquidity
+        let total_supplied: i128 = env.storage().instance()
+            .get(&DataKey::TotalSupplied(asset.clone()))
+            .unwrap_or(0i128);
+        let total_borrowed: i128 = env.storage().instance()
+            .get(&DataKey::TotalBorrowed(asset.clone()))
+            .unwrap_or(0i128);
+
+        let available_liquidity = total_supplied - total_borrowed;
+        if amount > available_liquidity {
+            panic!("insufficient liquidity");
         }
 
-        // Transfer repayment from user to contract
-        let asset_address: Address = env.storage().instance().get(&DataKey::Asset(asset_symbol.clone())).unwrap();
-        let token_client = token::Client::new(&env, &asset_address);
-        token_client.transfer(&user, &env.current_contract_address(), &repay_amount);
+        // Update user's debt
+        let mut user_debt: i128 = env.storage().instance()
+            .get(&DataKey::UserDebt(user.clone(), asset.clone()))
+            .unwrap_or(0i128);
+        user_debt = user_debt + amount;
+        env.storage().instance().set(&DataKey::UserDebt(user.clone(), asset.clone()), &user_debt);
 
-        // Update user's borrow position
-        let new_borrow = current_borrow.sub(&repay_amount);
-        env.storage().instance().set(&DataKey::UserBorrow(user.clone(), asset_symbol.clone()), &new_borrow);
+        // Update total borrowed
+        let new_total_borrowed = total_borrowed + amount;
+        env.storage().instance().set(&DataKey::TotalBorrowed(asset.clone()), &new_total_borrowed);
 
-        // Update total borrows
-        let total_borrows: I128 = env.storage().instance().get(&DataKey::TotalBorrows(asset_symbol.clone())).unwrap();
-        let new_total_borrows = total_borrows.sub(&repay_amount);
-        env.storage().instance().set(&DataKey::TotalBorrows(asset_symbol.clone()), &new_total_borrows);
+        // Check health factor after borrow
+        let account_data = Self::get_user_account_data(env.clone(), user.clone());
+        if account_data.health_factor < 1_0000000i128 { // Health factor < 1.0
+            panic!("borrow would cause liquidation");
+        }
 
-        env.events().publish((symbol_short!("repay"), user.clone(), asset_symbol.clone()), repay_amount);
+        // Update interest rates
+        Self::update_interest_rates(env.clone(), asset.clone());
+
+        env.events().publish((symbol_short!("borrow"), user, asset), amount);
     }
 
-    /// Enable an asset as collateral for the user
-    pub fn enable_collateral(env: Env, user: Address, asset_symbol: Symbol) {
+    /// Repay borrowed asset
+    pub fn repay(env: Env, user: Address, asset: Symbol, amount: i128) {
         user.require_auth();
 
-        // Get user's sToken balance (this represents their deposit)
-        let s_token_address: Address = env.storage().instance().get(&DataKey::SToken(asset_symbol.clone())).unwrap();
-        // Note: In a real implementation, this would call the sToken contract's balance function
-        let s_token_balance: I128 = I128::new(&env, 1000_0000000); // Mock balance for now
-
-        if s_token_balance <= I128::new(&env, 0) {
-            panic!("no deposits to use as collateral");
+        if amount <= 0 {
+            panic!("amount must be positive");
         }
 
-        // Convert sToken balance to underlying amount (1:1 for now)
-        let collateral_amount = s_token_balance;
+        let mut user_debt: i128 = env.storage().instance()
+            .get(&DataKey::UserDebt(user.clone(), asset.clone()))
+            .unwrap_or(0i128);
 
-        env.storage().instance().set(&DataKey::UserCollateral(user.clone(), asset_symbol.clone()), &collateral_amount);
-        env.events().publish((symbol_short!("coll_en"), user.clone(), asset_symbol.clone()), collateral_amount);
+        let repay_amount = if amount > user_debt { user_debt } else { amount };
+
+        user_debt = user_debt - repay_amount;
+        env.storage().instance().set(&DataKey::UserDebt(user.clone(), asset.clone()), &user_debt);
+
+        // Update total borrowed
+        let mut total_borrowed: i128 = env.storage().instance()
+            .get(&DataKey::TotalBorrowed(asset.clone()))
+            .unwrap_or(0i128);
+        total_borrowed = total_borrowed - repay_amount;
+        env.storage().instance().set(&DataKey::TotalBorrowed(asset.clone()), &total_borrowed);
+
+        // Update interest rates
+        Self::update_interest_rates(env.clone(), asset.clone());
+
+        env.events().publish((symbol_short!("repay"), user, asset), repay_amount);
     }
 
-    /// Helper function to get user's collateral amount
-    pub fn get_user_collateral(env: Env, user: Address, asset_symbol: Symbol) -> I128 {
-        env.storage().instance().get(&DataKey::UserCollateral(user, asset_symbol)).unwrap_or(I128::new(&env, 0))
-    }
+    /// Get user's account data (collateral, debt, health factor)
+    pub fn get_user_account_data(env: Env, user: Address) -> UserAccountData {
+        // This is a simplified implementation
+        // In practice, you'd iterate through all assets to calculate totals
 
-    /// Helper function to get user's borrow amount
-    pub fn get_user_borrow(env: Env, user: Address, asset_symbol: Symbol) -> I128 {
-        env.storage().instance().get(&DataKey::UserBorrow(user, asset_symbol)).unwrap_or(I128::new(&env, 0))
-    }
+        // For demo, let's assume we're checking XLM collateral and debt
+        let xlm_collateral: i128 = env.storage().instance()
+            .get(&DataKey::UserCollateral(user.clone(), symbol_short!("XLM")))
+            .unwrap_or(0i128);
+        let xlm_debt: i128 = env.storage().instance()
+            .get(&DataKey::UserDebt(user.clone(), symbol_short!("XLM")))
+            .unwrap_or(0i128);
 
-    /// Calculate maximum borrowing capacity for a user
-    pub fn calculate_max_borrow(env: Env, user: Address, collateral_symbol: Symbol, borrow_symbol: Symbol) -> I128 {
-        let collateral_amount = Self::get_user_collateral(env.clone(), user, collateral_symbol.clone());
-        
-        if collateral_amount <= I128::new(&env, 0) {
-            return I128::new(&env, 0);
-        }
+        // Mock USD values (in real implementation, get from price oracle)
+        let xlm_price = 12_0000000i128; // $0.12
+        let total_collateral_usd = xlm_collateral * xlm_price / 10_000_000i128;
+        let total_debt_usd = xlm_debt * xlm_price / 10_000_000i128;
 
-        let collateral_value_usd = Self::get_asset_value_usd(env.clone(), collateral_symbol.clone(), collateral_amount);
-        let ltv_ratio: u32 = env.storage().instance().get(&DataKey::LtvRatio(collateral_symbol)).unwrap_or(6000); // Default 60%
-        
-        // Apply LTV ratio
-        let max_borrow_usd = collateral_value_usd.mul(&I128::new(&env, ltv_ratio as i128)).div(&I128::new(&env, 10000));
-        
-        max_borrow_usd
-    }
-
-    /// Get asset value in USD using the price oracle
-    pub fn get_asset_value_usd(env: Env, asset_symbol: Symbol, amount: I128) -> I128 {
-        let _price_oracle: Address = env.storage().instance().get(&DataKey::PriceOracle).unwrap();
-        // Note: In a real implementation, this would call the price oracle contract
-        // Mock prices for testing: XLM=$0.12, USDC=$1.00, stETH=$1500
-        let asset_price_usd: I128 = match asset_symbol {
-            _ if asset_symbol == symbol_short!("XLM") => I128::new(&env, 0_1200000),
-            _ if asset_symbol == symbol_short!("USDC") => I128::new(&env, 1_0000000),
-            _ if asset_symbol == symbol_short!("stETH") => I128::new(&env, 1500_0000000),
-            _ => I128::new(&env, 1_0000000),
+        let ltv = if total_collateral_usd > 0 {
+            ((total_debt_usd * 10000) / total_collateral_usd) as u32
+        } else {
+            0
         };
-        
-        amount.mul(&asset_price_usd).div(&I128::new(&env, 1_0000000))
+
+        let health_factor = if total_debt_usd > 0 {
+            (total_collateral_usd * 8000) / (total_debt_usd * 10000) // 80% liquidation threshold
+        } else {
+            i128::MAX
+        };
+
+        UserAccountData {
+            total_collateral_usd,
+            total_debt_usd,
+            ltv,
+            health_factor,
+        }
     }
 
-    /// Get pool info for an asset
-    pub fn get_pool_info(env: Env, asset_symbol: Symbol) -> (I128, I128, I128) {
-        let total_liquidity: I128 = env.storage().instance().get(&DataKey::TotalLiquidity(asset_symbol.clone())).unwrap_or(I128::new(&env, 0));
-        let total_borrows: I128 = env.storage().instance().get(&DataKey::TotalBorrows(asset_symbol.clone())).unwrap_or(I128::new(&env, 0));
-        let available_liquidity = total_liquidity.sub(&total_borrows);
-        
-        (total_liquidity, total_borrows, available_liquidity)
+    /// Get asset configuration
+    pub fn get_asset_config(env: Env, asset: Symbol) -> AssetConfig {
+        env.storage().instance()
+            .get(&DataKey::Asset(asset))
+            .unwrap_or_else(|| panic!("asset not configured"))
     }
 
-    /// Check if a position is healthy (below liquidation threshold)
-    pub fn is_position_healthy(env: Env, user: Address, collateral_symbol: Symbol, borrow_symbol: Symbol) -> bool {
-        let collateral_amount = Self::get_user_collateral(env.clone(), user.clone(), collateral_symbol.clone());
-        let borrow_amount = Self::get_user_borrow(env.clone(), user.clone(), borrow_symbol.clone());
-        
-        if borrow_amount <= I128::new(&env, 0) {
-            return true; // No debt = healthy
-        }
+    /// Get pool liquidity info
+    pub fn get_pool_info(env: Env, asset: Symbol) -> (i128, i128, u32) {
+        let total_supplied: i128 = env.storage().instance()
+            .get(&DataKey::TotalSupplied(asset.clone()))
+            .unwrap_or(0i128);
+        let total_borrowed: i128 = env.storage().instance()
+            .get(&DataKey::TotalBorrowed(asset.clone()))
+            .unwrap_or(0i128);
+        let utilization_rate: u32 = env.storage().instance()
+            .get(&DataKey::UtilizationRate(asset))
+            .unwrap_or(0u32);
 
-        if collateral_amount <= I128::new(&env, 0) {
-            return false; // Debt but no collateral = unhealthy
-        }
+        (total_supplied, total_borrowed, utilization_rate)
+    }
 
-        let collateral_value_usd = Self::get_asset_value_usd(env.clone(), collateral_symbol.clone(), collateral_amount);
-        let borrow_value_usd = Self::get_asset_value_usd(env.clone(), borrow_symbol.clone(), borrow_amount);
-        
-        let liquidation_threshold: u32 = env.storage().instance().get(&DataKey::LiquidationThreshold(collateral_symbol)).unwrap_or(8000); // Default 80%
-        let max_debt_value_usd = collateral_value_usd.mul(&I128::new(&env, liquidation_threshold as i128)).div(&I128::new(&env, 10000));
-        
-        borrow_value_usd <= max_debt_value_usd
+    // Internal helper functions
+    fn update_interest_rates(env: Env, asset: Symbol) {
+        let total_supplied: i128 = env.storage().instance()
+            .get(&DataKey::TotalSupplied(asset.clone()))
+            .unwrap_or(0i128);
+        let total_borrowed: i128 = env.storage().instance()
+            .get(&DataKey::TotalBorrowed(asset.clone()))
+            .unwrap_or(0i128);
+
+        let utilization_rate = if total_supplied > 0 {
+            ((total_borrowed * 10000) / total_supplied) as u32
+        } else {
+            0
+        };
+
+        // Simple interest rate model: base_rate + utilization_rate * slope
+        let base_borrow_rate = 2_0000000i128; // 2%
+        let rate_slope = 5_0000000i128; // 5%
+
+        let borrow_rate = base_borrow_rate + (rate_slope * utilization_rate as i128) / 10000;
+        let supply_rate = (borrow_rate * utilization_rate as i128) / 10000;
+
+        env.storage().instance().set(&DataKey::UtilizationRate(asset.clone()), &utilization_rate);
+        env.storage().instance().set(&DataKey::BorrowRate(asset.clone()), &borrow_rate);
+        env.storage().instance().set(&DataKey::SupplyRate(asset.clone()), &supply_rate);
+        env.storage().instance().set(&DataKey::LastUpdate(asset), &env.ledger().timestamp());
     }
 }
 

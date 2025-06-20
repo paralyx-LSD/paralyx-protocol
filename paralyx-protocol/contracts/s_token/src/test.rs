@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::*;
-use soroban_sdk::{testutils::{Address as _, MockAuth, MockAuthInvoke}, Address, Env, String, I128};
+use soroban_sdk::{testutils::{Address as _, MockAuth, MockAuthInvoke}, Address, Env, String, IntoVal};
 
 fn create_token_contract<'a>(e: &Env) -> Address {
     e.register_contract(None, SToken {})
@@ -25,9 +25,9 @@ fn test_initialize() {
     assert_eq!(client.name(), name);
     assert_eq!(client.symbol(), symbol);
     assert_eq!(client.decimals(), decimals);
-    assert_eq!(client.total_supply(), I128::new(&env, 0));
+    assert_eq!(client.total_supply(), 0i128);
     assert_eq!(client.underlying_asset(), underlying_asset);
-    assert_eq!(client.exchange_rate(), I128::new(&env, 1_0000000));
+    assert_eq!(client.exchange_rate(), 1_0000000i128);
 }
 
 #[test]
@@ -70,7 +70,7 @@ fn test_mint() {
         &7u32
     );
 
-    let mint_amount = I128::new(&env, 1000_0000000);
+    let mint_amount = 1000_0000000i128;
     
     client.mock_auths(&[
         MockAuth {
@@ -78,7 +78,7 @@ fn test_mint() {
             invoke: &MockAuthInvoke {
                 contract: &contract_id,
                 fn_name: "mint",
-                args: (&user, &mint_amount).into_val(&env),
+                args: (user.clone(), mint_amount).into_val(&env),
                 sub_invokes: &[],
             },
         }
@@ -110,8 +110,8 @@ fn test_burn() {
         &7u32
     );
 
-    let mint_amount = I128::new(&env, 1000_0000000);
-    let burn_amount = I128::new(&env, 300_0000000);
+    let mint_amount = 1000_0000000i128;
+    let burn_amount = 300_0000000i128;
     
     // First mint tokens
     client.mock_auths(&[
@@ -120,7 +120,7 @@ fn test_burn() {
             invoke: &MockAuthInvoke {
                 contract: &contract_id,
                 fn_name: "mint",
-                args: (&user, &mint_amount).into_val(&env),
+                args: (user.clone(), mint_amount).into_val(&env),
                 sub_invokes: &[],
             },
         }
@@ -133,13 +133,13 @@ fn test_burn() {
             invoke: &MockAuthInvoke {
                 contract: &contract_id,
                 fn_name: "burn",
-                args: (&user, &burn_amount).into_val(&env),
+                args: (user.clone(), burn_amount).into_val(&env),
                 sub_invokes: &[],
             },
         }
     ]).burn(&user, &burn_amount);
 
-    let expected_balance = mint_amount.sub(&burn_amount);
+    let expected_balance = mint_amount - burn_amount;
     assert_eq!(client.balance(&user), expected_balance);
     assert_eq!(client.total_supply(), expected_balance);
 }
@@ -167,7 +167,7 @@ fn test_burn_insufficient_balance() {
         &7u32
     );
 
-    let burn_amount = I128::new(&env, 1000_0000000);
+    let burn_amount = 1000_0000000i128;
     
     client.mock_auths(&[
         MockAuth {
@@ -175,7 +175,7 @@ fn test_burn_insufficient_balance() {
             invoke: &MockAuthInvoke {
                 contract: &contract_id,
                 fn_name: "burn",
-                args: (&user, &burn_amount).into_val(&env),
+                args: (user.clone(), burn_amount).into_val(&env),
                 sub_invokes: &[],
             },
         }
@@ -204,7 +204,7 @@ fn test_exchange_rate_conversion() {
     );
 
     // Test with initial 1:1 rate
-    let underlying_amount = I128::new(&env, 1000_0000000);
+    let underlying_amount = 1000_0000000i128;
     let s_token_amount = client.underlying_to_s_token(&underlying_amount);
     assert_eq!(s_token_amount, underlying_amount);
 
@@ -212,14 +212,14 @@ fn test_exchange_rate_conversion() {
     assert_eq!(converted_back, underlying_amount);
 
     // Update exchange rate to 1.5 (meaning 1 sToken = 1.5 underlying)
-    let new_rate = I128::new(&env, 1_5000000);
+    let new_rate = 1_5000000i128;
     client.mock_auths(&[
         MockAuth {
             address: &lending_pool,
             invoke: &MockAuthInvoke {
                 contract: &contract_id,
                 fn_name: "update_exchange_rate",
-                args: (&new_rate,).into_val(&env),
+                args: (new_rate,).into_val(&env),
                 sub_invokes: &[],
             },
         }
@@ -229,13 +229,13 @@ fn test_exchange_rate_conversion() {
 
     // Test conversion with new rate
     let s_token_amount_new = client.underlying_to_s_token(&underlying_amount);
-    let expected_s_tokens = I128::new(&env, 666_6666666); // 1000 / 1.5 ≈ 666.67
+    let expected_s_tokens = 666_6666666i128; // 1000 / 1.5 ≈ 666.67
     
     // Allow for small rounding differences
     let diff = if s_token_amount_new > expected_s_tokens {
-        s_token_amount_new.sub(&expected_s_tokens)
+        s_token_amount_new - expected_s_tokens
     } else {
-        expected_s_tokens.sub(&s_token_amount_new)
+        expected_s_tokens - s_token_amount_new
     };
-    assert!(diff <= I128::new(&env, 10)); // Within 10 units for rounding
+    assert!(diff <= 10i128); // Within 10 units for rounding
 } 

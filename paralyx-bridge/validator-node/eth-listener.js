@@ -1,4 +1,4 @@
-const { Web3 } = require('web3');
+const { ethers } = require('ethers');
 const winston = require('winston');
 const config = require('./config');
 
@@ -24,10 +24,11 @@ const logger = winston.createLogger({
 
 class EthereumListener {
   constructor() {
-    this.web3 = new Web3(config.ethereum.rpcUrl);
-    this.contract = new this.web3.eth.Contract(
+    this.provider = new ethers.JsonRpcProvider(config.ethereum.rpcUrl);
+    this.contract = new ethers.Contract(
+      config.ethereum.contractAddress,
       config.abis.lockbox,
-      config.ethereum.contractAddress
+      this.provider
     );
     this.lastProcessedBlock = null;
     this.isRunning = false;
@@ -37,7 +38,7 @@ class EthereumListener {
   async initialize() {
     try {
       // Validate connection
-      const blockNumber = await this.web3.eth.getBlockNumber();
+      const blockNumber = await this.provider.getBlockNumber();
       logger.info('Connected to Ethereum network', { 
         blockNumber,
         chainId: config.ethereum.chainId,
@@ -94,7 +95,7 @@ class EthereumListener {
 
   async processNewBlocks() {
     try {
-      const currentBlock = await this.web3.eth.getBlockNumber();
+      const currentBlock = await this.provider.getBlockNumber();
       
       if (currentBlock <= this.lastProcessedBlock) {
         return; // No new blocks
@@ -102,8 +103,8 @@ class EthereumListener {
 
       const fromBlock = this.lastProcessedBlock + 1;
       const toBlock = Math.min(
-        currentBlock - config.ethereum.confirmations,
-        fromBlock + config.bridge.maxBatchSize - 1
+        currentBlock - Number(config.ethereum.confirmations),
+        fromBlock + Number(config.bridge.maxBatchSize) - 1
       );
 
       if (toBlock < fromBlock) {
@@ -112,11 +113,9 @@ class EthereumListener {
 
       logger.debug('Processing blocks', { fromBlock, toBlock, currentBlock });
 
-      // Get AssetLocked events
-      const events = await this.contract.getPastEvents('AssetLocked', {
-        fromBlock,
-        toBlock
-      });
+      // Get AssetLocked events using ethers.js filter
+      const filter = this.contract.filters.AssetLocked();
+      const events = await this.contract.queryFilter(filter, fromBlock, toBlock);
 
       if (events.length > 0) {
         logger.info('Found AssetLocked events', { 
@@ -139,16 +138,17 @@ class EthereumListener {
 
   async processAssetLockedEvent(event) {
     try {
-      const { returnValues, transactionHash, blockNumber, logIndex } = event;
+      // Ethers.js event structure is different
+      const { args, transactionHash, blockNumber, logIndex } = event;
       
       const lockEvent = {
         id: `${transactionHash}-${logIndex}`,
-        user: returnValues.user,
-        token: returnValues.token,
-        amount: returnValues.amount,
-        stellarAddress: returnValues.stellarAddress,
-        stellarSymbol: returnValues.stellarSymbol,
-        lockId: returnValues.lockId,
+        user: args.user,
+        token: args.token,
+        amount: args.amount.toString(), // Convert BigInt to string
+        stellarAddress: args.stellarAddress,
+        stellarSymbol: args.stellarSymbol,
+        lockId: args.lockId.toString(), // Convert BigInt to string
         transactionHash,
         blockNumber,
         timestamp: new Date().toISOString(),
@@ -189,17 +189,23 @@ class EthereumListener {
       return false;
     }
 
-    // Amount validation
-    const amount = BigInt(lockEvent.amount);
-    const minAmount = BigInt(config.security.minAmount);
-    const maxAmount = BigInt(config.security.maxAmount);
+    // Amount validation - convert to BigInt safely
+    let amount, minAmount, maxAmount;
+    try {
+      amount = BigInt(lockEvent.amount.toString());
+      minAmount = BigInt(config.security.minAmount.toString());
+      maxAmount = BigInt(config.security.maxAmount.toString());
 
-    if (amount < minAmount || amount > maxAmount) {
-      logger.warn('Amount out of range', { 
-        amount: lockEvent.amount,
-        min: config.security.minAmount,
-        max: config.security.maxAmount
-      });
+      if (amount < minAmount || amount > maxAmount) {
+        logger.warn('Amount out of range', { 
+          amount: lockEvent.amount.toString(),
+          min: config.security.minAmount.toString(),
+          max: config.security.maxAmount.toString()
+        });
+        return false;
+      }
+    } catch (error) {
+      logger.error('Error validating amount', { error: error.message });
       return false;
     }
 

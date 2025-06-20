@@ -5,21 +5,25 @@ async function main() {
 
   // Get the deployer account
   const [deployer] = await ethers.getSigners();
-  console.log("Deploying contracts with account:", deployer.address);
-  console.log("Account balance:", (await deployer.getBalance()).toString());
+  console.log("Deploying contracts with account:", await deployer.getAddress());
+  
+  // Get balance using provider
+  const deployerAddress = await deployer.getAddress();
+  const balance = await ethers.provider.getBalance(deployerAddress);
+  console.log("Account balance:", ethers.formatEther(balance), "ETH");
 
   // Deploy the LSDLockbox contract
   const LSDLockbox = await ethers.getContractFactory("LSDLockbox");
   const lockbox = await LSDLockbox.deploy();
   
-  await lockbox.deployed();
+  await lockbox.waitForDeployment();
   
-  console.log("LSDLockbox deployed to:", lockbox.address);
-  console.log("Transaction hash:", lockbox.deployTransaction.hash);
+  console.log("LSDLockbox deployed to:", await lockbox.getAddress());
+  console.log("Transaction hash:", lockbox.deploymentTransaction().hash);
   
   // Wait for a few confirmations
   console.log("Waiting for confirmations...");
-  await lockbox.deployTransaction.wait(3);
+  await lockbox.deploymentTransaction().wait(3);
   
   // Setup initial configuration
   console.log("Setting up initial configuration...");
@@ -67,9 +71,9 @@ async function main() {
     
     // Set the deployer as an authorized validator initially
     console.log("Setting up validator...");
-    const setValidatorTx = await lockbox.setValidator(deployer.address, true);
+    const setValidatorTx = await lockbox.setValidator(deployerAddress, true);
     await setValidatorTx.wait();
-    console.log("Validator set:", deployer.address);
+    console.log("Validator set:", deployerAddress);
     
   } catch (error) {
     console.log("Setup error:", error.message);
@@ -77,20 +81,21 @@ async function main() {
   
   // Display contract information
   console.log("\n=== Deployment Summary ===");
-  console.log("Contract Address:", lockbox.address);
-  console.log("Deployer:", deployer.address);
+  console.log("Contract Address:", await lockbox.getAddress());
+  console.log("Deployer:", deployerAddress);
   console.log("Network:", (await ethers.provider.getNetwork()).name);
   console.log("Block Number:", await ethers.provider.getBlockNumber());
   
   // Save deployment info
+  const network = await ethers.provider.getNetwork();
   const deploymentInfo = {
-    contractAddress: lockbox.address,
-    deployer: deployer.address,
-    network: (await ethers.provider.getNetwork()).name,
-    chainId: (await ethers.provider.getNetwork()).chainId,
-    deploymentBlock: await ethers.provider.getBlockNumber(),
+    contractAddress: await lockbox.getAddress(),
+    deployer: deployerAddress,
+    network: network.name,
+    chainId: network.chainId.toString(), // Convert BigInt to string
+    deploymentBlock: (await ethers.provider.getBlockNumber()).toString(), // Convert to string
     timestamp: new Date().toISOString(),
-    transactionHash: lockbox.deployTransaction.hash
+    transactionHash: lockbox.deploymentTransaction().hash
   };
   
   console.log("\n=== Contract ABI and Address for Bridge ===");
@@ -100,7 +105,7 @@ async function main() {
   if (process.env.ETHERSCAN_API_KEY) {
     console.log("\nVerifying contract on Etherscan...");
     console.log("Run this command to verify:");
-    console.log(`npx hardhat verify --network ${network.name} ${lockbox.address}`);
+    console.log(`npx hardhat verify --network sepolia ${await lockbox.getAddress()}`);
   }
 }
 

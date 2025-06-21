@@ -1,0 +1,37 @@
+{
+  "name": "paralyx-bridge-validator",
+  "version": "1.0.0",
+  "description": "Bridge validator node for Paralyx Protocol cross-chain operations",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "jest",
+    "eth-listener": "node eth-listener.js",
+    "stellar-minter": "node stellar-minter.js"
+  },
+  "keywords": [
+    "bridge",
+    "validator",
+    "ethereum",
+    "stellar",
+    "cross-chain",
+    "defi"
+  ],
+  "author": "Paralyx Protocol",
+  "license": "MIT",
+  "dependencies": {
+    "@stellar/stellar-sdk": "^12.0.1",
+    "axios": "^1.6.2",
+    "dotenv": "^16.3.1",
+    "ethers": "^6.14.4",
+    "node-cron": "^3.0.3",
+    "redis": "^4.6.11",
+    "web3": "^4.3.0",
+    "winston": "^3.11.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.2"
+  }
+}

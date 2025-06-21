@@ -1,0 +1,299 @@
+# ================================
+# PARALYX PROTOCOL .GITIGNORE
+# ================================
+
+# ================================
+# ENVIRONMENT & SECRETS
+# ================================
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+.env.*
+!.env.example
+!env.example
+
+# Private keys and wallets
+*.key
+*.pem
+keystore/
+wallets/
+secrets/
+private/
+
+# ================================
+# RUST & SOROBAN
+# ================================
+# Rust build artifacts
+/target/
+target/
+**/target/
+Cargo.lock
+*.lock
+
+# Rust temporary files
+**/*.rs.bk
+*.orig
+*.rej
+
+# Soroban specific
+.soroban/
+**/.soroban/
+*.wasm
+*.optimized.wasm
+
+# ================================
+# NODE.JS & NPM
+# ================================
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# NPM cache
+.npm
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+.pnp.*
+
+# Package manager locks (keep package-lock.json for consistency)
+yarn.lock
+pnpm-lock.yaml
+
+# ================================
+# ETHEREUM & HARDHAT
+# ================================
+# Hardhat
+cache/
+artifacts/
+**/cache/
+**/artifacts/
+typechain/
+**/typechain/
+typechain-types/
+
+# Coverage reports
+coverage/
+coverage.json
+**/coverage/
+.nyc_output
+
+# Gas reports
+gas-report.txt
+
+# ================================
+# LOGS & MONITORING
+# ================================
+logs/
+*.log
+**/logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# ================================
+# DATABASES & STORAGE
+# ================================
+*.db
+*.sqlite
+*.sqlite3
+data/
+**/data/
+db/
+
+# Redis dumps
+dump.rdb
+
+# ================================
+# BUILD OUTPUTS
+# ================================
+build/
+dist/
+out/
+**/build/
+**/dist/
+**/out/
+
+# Next.js
+.next/
+out/
+
+# Nuxt.js
+.nuxt
+dist
+
+# ================================
+# IDE & EDITORS
+# ================================
+# VSCode
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# Cursor
+.cursor/
+
+# IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ================================
+# OS GENERATED
+# ================================
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# ================================
+# DEPLOYMENT & DOCKER
+# ================================
+# Docker
+.dockerignore
+Dockerfile.prod
+docker-compose.override.yml
+.docker/
+
+# Deployment
+deploy/
+deployment/
+terraform/
+.terraform/
+*.tfstate
+*.tfstate.*
+
+# ================================
+# TESTING
+# ================================
+# Test outputs
+test-results/
+coverage/
+.nyc_output/
+junit.xml
+
+# Jest
+.jest/
+
+# ================================
+# TEMPORARY FILES
+# ================================
+*.tmp
+*.temp
+.tmp/
+.temp/
+*.backup
+*.bak
+
+# ================================
+# MISC
+# ================================
+# Optional npm cache directory
+.npm
+
+# Optional eslint cache
+.eslintcache
+
+# Microbundle cache
+.rpt2_cache/
+.rts2_cache_cjs/
+.rts2_cache_es/
+.rts2_cache_umd/
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# Stores VSCode versions used for testing VSCode extensions
+.vscode-test
+
+# Temporary folders
+tmp/
+temp/
+
+# ================================
+# PROJECT SPECIFIC
+# ================================
+# Paralyx specific temporary files
+**/state-*.md.backup
+deployment-info.json
+bridge-stats.json
+
+# Contract deployment artifacts (keep deployment scripts)
+deployed-contracts.json
+contract-addresses.json
+
+# Performance logs
+*.perf
+
+# ================================
+# SECURITY SCANS
+# ================================
+# Security audit files
+security-audit/
+vulnerability-report/
+.snyk
+
+# Static analysis
+.scannerwork/ 

@@ -211,7 +211,9 @@ class EthereumListener {
 
     // Token whitelist validation
     if (config.security.enableWhitelist) {
-      if (!config.security.whitelistedTokens.includes(lockEvent.token.toLowerCase())) {
+      const tokenLower = lockEvent.token.toLowerCase();
+      const whitelistedTokensLower = config.security.whitelistedTokens.map(t => t.toLowerCase());
+      if (!whitelistedTokensLower.includes(tokenLower)) {
         logger.warn('Token not whitelisted', { token: lockEvent.token });
         return false;
       }

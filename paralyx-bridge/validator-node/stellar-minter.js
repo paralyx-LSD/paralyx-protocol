@@ -261,11 +261,8 @@ class StellarMinter {
         throw new Error(`Simulation failed: ${JSON.stringify(simResult)}`);
       }
 
-      // Update transaction with simulation results
-      const preparedTransaction = StellarSdk.SorobanRpc.assembleTransaction(
-        transaction,
-        simResult
-      );
+      // Prepare transaction with simulation results
+      const preparedTransaction = await this.rpc.prepareTransaction(transaction);
 
       // Sign the transaction
       preparedTransaction.sign(this.sourceKeypair);

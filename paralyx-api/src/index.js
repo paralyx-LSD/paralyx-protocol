@@ -19,7 +19,7 @@ const bridgeRoutes = require('./routes/bridge');
 const healthRoutes = require('./routes/health');
 
 // Import middleware
-const errorHandler = require('./middleware/errorHandler');
+const { errorHandler } = require('./middleware/errorHandler');
 const { validateApiKey } = require('./middleware/auth');
 
 const app = express();

@@ -1,0 +1,107 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Paralyx Protocol API",
+    "version": "1.0.0",
+    "description": "Backend API for Paralyx Protocol - Cross-chain LSD lending platform on Stellar",
+    "contact": {
+      "name": "Paralyx Protocol Team",
+      "url": "https://paralyx.finance",
+      "email": "api@paralyx.finance"
+    },
+    "license": {
+      "name": "MIT",
+      "url": "https://opensource.org/licenses/MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3001",
+      "description": "Development server"
+    },
+    {
+      "url": "https://api.paralyx.finance",
+      "description": "Production server"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "summary": "API information",
+        "tags": ["General"],
+        "responses": {
+          "200": {
+            "description": "API information and available endpoints"
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "summary": "Basic health check",
+        "tags": ["Health"],
+        "responses": {
+          "200": {
+            "description": "Service is healthy"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "General",
+      "description": "General API information"
+    },
+    {
+      "name": "Health",
+      "description": "Health check endpoints"
+    },
+    {
+      "name": "User",
+      "description": "User-specific data and positions"
+    },
+    {
+      "name": "Protocol",
+      "description": "Protocol statistics and information"
+    },
+    {
+      "name": "Markets",
+      "description": "Lending market data"
+    },
+    {
+      "name": "Rates",
+      "description": "Interest rates and calculations"
+    },
+    {
+      "name": "Bridge",
+      "description": "Cross-chain bridge status and transactions"
+    }
+  ]
+} 

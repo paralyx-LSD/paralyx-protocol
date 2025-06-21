@@ -103,7 +103,7 @@ async function main() {
             console.log("\n🎯 All tokens and validator configured successfully!");
             console.log("📋 Ready for bridge testing!");
         } else {
-            console.log("\n⚠️  Some configurations may have failed!");
+            console.log("\n  Some configurations may have failed!");
         }
         
     } catch (error) {

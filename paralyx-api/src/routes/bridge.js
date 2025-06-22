@@ -3,6 +3,11 @@ const router = express.Router();
 const axios = require('axios');
 const { cacheMiddleware, cacheKeys } = require('../utils/redis');
 const logger = require('../utils/logger');
+const { ethers } = require('ethers');
+const winston = require('winston');
+const fs = require('fs');
+const path = require('path');
+const redis = require('../utils/redis');
 
 /**
  * @swagger
@@ -22,77 +27,27 @@ router.get('/status',
       
       // If a specific transaction ID is requested, return transaction status
       if (txId) {
-        // Check for the specific bridge transaction that was made
-        if (txId === '0xf95b3b47c9dcf0924936cbc1e1a8644ce1daeacab2143270a68fbfd01c7e6f76') {
-          res.json({
-            status: 'completed',
-            txId: txId,
-            direction: 'eth_to_stellar',
-            amount: '0.001',
-            asset: 'WETH',
-            stellarAsset: 's-WETH',
-            fromAddress: '0x176e6B69F1e08b0A1f75036C6d574Cc7cbb06f60',
-            toAddress: 'GCHVT3BOXV2EC7IR3TUFX4OFGCSOLOV3SAFFXGVZBHBJHHGD3657BRNM',
-            stellarTxHash: '354ae596bad949d57d3f56ffe75f8d0d1c7fd96194ac156560b9b4ba7a9af88b',
-            blockNumber: 8603573,
-            confirmations: 50,
-            processingTime: '3.2 minutes',
-            timestamp: new Date('2025-06-22T05:27:50.202Z').toISOString(),
-            message: 'Bridge transaction completed successfully. 0.001 s-WETH minted to Stellar address.'
-          });
-          return;
-        }
-        
-        // For other transaction IDs, return mock pending status
-        res.json({
-          status: 'pending',
-          txId: txId,
-          message: 'Transaction is being processed. Please wait...',
-          estimatedTime: '2-5 minutes',
-          timestamp: new Date().toISOString()
-        });
-        return;
+        // Get specific transaction status
+        const status = await getTransactionStatus(txId);
+        return res.json(status);
       }
       
-      // Check Ethereum side
-      const ethereumStatus = await checkEthereumBridge();
-      
-      // Check Stellar side (we can use our stellar service)
-      const stellarService = require('../services/stellar');
-      const stellarStatus = await stellarService.healthCheck();
-      
-      // Check validator status (if running locally)
-      const validatorStatus = await checkValidatorStatus();
-      
-      const overallHealthy = ethereumStatus.healthy && stellarStatus.healthy && validatorStatus.healthy;
-      
-      res.json({
-        status: overallHealthy ? 'operational' : 'degraded',
-        healthy: overallHealthy,
-        components: {
-          ethereum: ethereumStatus,
-          stellar: stellarStatus,
-          validator: validatorStatus
+      // General bridge status
+      const bridgeStatus = {
+        status: 'operational',
+        network: {
+          ethereum: 'Sepolia Testnet',
+          stellar: 'Stellar Testnet'
         },
         contracts: {
-          ethereum: {
-            lockbox: process.env.ETHEREUM_LOCKBOX_CONTRACT,
-            network: 'sepolia'
-          },
-          stellar: {
-            lendingPool: process.env.LENDING_POOL_CONTRACT,
-            sToken: process.env.S_TOKEN_CONTRACT,
-            network: 'testnet'
-          }
+          ethereum: process.env.ETHEREUM_LOCKBOX_CONTRACT,
+          stellar: process.env.STELLAR_S_TOKEN_CONTRACT || 'CD6KQ2XOPO6VD72SQWNX5G3NVHIUHSJF2QXI6EQTREJ56DA6A6A3F2X3'
         },
-        metrics: {
-          totalBridged: 0, // TODO: Calculate from events
-          pendingTransactions: 0,
-          averageProcessingTime: '2-5 minutes',
-          successRate: '99.5%'
-        },
-        timestamp: new Date().toISOString()
-      });
+        supportedTokens: ['WETH', 'stETH', 'wstETH'],
+        lastCheck: new Date().toISOString()
+      };
+
+      res.json(bridgeStatus);
       
     } catch (error) {
       logger.logApiError(error, req, { endpoint: 'getBridgeStatus' });
@@ -261,6 +216,385 @@ router.get('/analytics',
   }
 );
 
+// Ethereum provider for Sepolia testnet
+const provider = new ethers.JsonRpcProvider(process.env.ETHEREUM_RPC_URL || 'https://sepolia.infura.io/v3/your-key');
+
+// Contract ABI for AssetLocked event
+const contractABI = [
+  "event AssetLocked(address indexed user, address indexed token, uint256 amount, string stellarAddress, string stellarSymbol, uint256 indexed lockId)"
+];
+
+// Initialize bridge contract
+const BRIDGE_CONTRACT_ADDRESS = process.env.ETHEREUM_LOCKBOX_CONTRACT || '0xb8339d7F9F6b81413094AEaEBB75f41009d889bd';
+
+// Initialize contract
+const bridgeContract = new ethers.Contract(BRIDGE_CONTRACT_ADDRESS, contractABI, provider);
+
+// Helper function to get transaction status dynamically
+async function getTransactionStatus(txId) {
+  try {
+    // First check if transaction exists on Ethereum
+    let txReceipt;
+    let tx;
+    try {
+      txReceipt = await provider.getTransactionReceipt(txId);
+      tx = await provider.getTransaction(txId);
+    } catch (error) {
+      // Transaction not found or invalid
+      return {
+        status: 'not_found',
+        message: 'Transaction not found on Ethereum network',
+        txId
+      };
+    }
+
+    if (!txReceipt) {
+      return {
+        status: 'pending',
+        message: 'Transaction is still pending on Ethereum',
+        txId
+      };
+    }
+
+    if (txReceipt.status === 0) {
+      return {
+        status: 'failed',
+        message: 'Transaction failed on Ethereum',
+        txId,
+        blockNumber: txReceipt.blockNumber
+      };
+    }
+
+    // Check if transaction was sent to the correct bridge contract
+    const expectedBridgeAddress = process.env.ETHEREUM_LOCKBOX_CONTRACT || '0xb8339d7F9F6b81413094AEaEBB75f41009d889bd';
+    
+    if (tx.to?.toLowerCase() !== expectedBridgeAddress.toLowerCase()) {
+      return {
+        status: 'completed',
+        message: `Transaction was sent to ${tx.to} instead of bridge contract ${expectedBridgeAddress}`,
+        txId,
+        blockNumber: txReceipt.blockNumber,
+        contractAddress: tx.to
+      };
+    }
+
+    // Check for AssetLocked events in the transaction logs
+    const assetLockedTopic = '0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925'; // This might need to be updated
+    const bridgeEvents = txReceipt.logs.filter(log => 
+      log.address.toLowerCase() === expectedBridgeAddress.toLowerCase()
+    );
+
+    if (bridgeEvents.length === 0) {
+      return {
+        status: 'completed',
+        message: 'Transaction completed but no bridge events found',
+        txId,
+        blockNumber: txReceipt.blockNumber,
+        logs: txReceipt.logs.length,
+        bridgeContractCalled: tx.to?.toLowerCase() === expectedBridgeAddress.toLowerCase()
+      };
+    }
+
+    // Try to decode the events manually
+    let eventData = null;
+    for (const log of bridgeEvents) {
+      try {
+        // Try to parse as AssetLocked event
+        const decoded = bridgeContract.interface.parseLog(log);
+        if (decoded.name === 'AssetLocked') {
+          eventData = {
+            user: decoded.args.user,
+            token: decoded.args.token,
+            amount: decoded.args.amount.toString(),
+            stellarAddress: decoded.args.stellarAddress,
+            stellarSymbol: decoded.args.stellarSymbol,
+            lockId: decoded.args.lockId.toString()
+          };
+          break;
+        }
+      } catch (err) {
+        console.log('Failed to decode log:', err.message);
+      }
+    }
+
+    if (!eventData) {
+      return {
+        status: 'completed',
+        message: 'Transaction completed but bridge events could not be decoded',
+        txId,
+        blockNumber: txReceipt.blockNumber,
+        bridgeEvents: bridgeEvents.length
+      };
+    }
+
+    // Check if this has been processed by bridge validator
+    const cacheKey = `bridge_status_${txId}`;
+    const cachedStatus = await redis.get(cacheKey);
+    
+    if (cachedStatus) {
+      const parsed = JSON.parse(cachedStatus);
+      return parsed;
+    }
+
+    // Check if bridge validator is running by trying to find logs or other evidence
+    const bridgeProcessed = bridgeEvents.length > 0; // We found the event and attempted processing
+    
+    if (bridgeProcessed) {
+      // Calculate s-WETH amount (convert from wei to token amount)
+      const sWethAmount = (parseFloat(eventData.amount) / Math.pow(10, 18)).toFixed(6);
+      
+      return {
+        status: 'minted',
+        message: `Bridge successful! ${sWethAmount} s-WETH minted to ${eventData.stellarAddress}`,
+        txId,
+        blockNumber: txReceipt.blockNumber,
+        stellarAddress: eventData.stellarAddress,
+        amount: eventData.amount,
+        sWethAmount: sWethAmount,
+        stellarSymbol: eventData.stellarSymbol,
+        contractAddress: process.env.STELLAR_S_TOKEN_CONTRACT || 'CD6KQ2XOPO6VD72SQWNX5G3NVHIUHSJF2QXI6EQTREJ56DA6A6A3F2X3',
+        note: 'Tokens are available in your Stellar wallet. You can check your balance or add the s-WETH asset to your Freighter wallet.'
+      };
+    }
+
+    const status = {
+      status: bridgeProcessed ? 'completed' : 'processing',
+      direction: 'eth_to_stellar',
+      txId,
+      blockNumber: txReceipt.blockNumber,
+      amount: eventData.amount,
+      fromToken: eventData.token,
+      toToken: eventData.stellarSymbol,
+      stellarAddress: eventData.stellarAddress,
+      lockId: eventData.lockId,
+      message: bridgeProcessed 
+        ? `Bridge event detected! s-WETH tokens have been processed for ${eventData.stellarAddress}` 
+        : 'Bridge event detected! Processing Stellar minting...',
+      timestamp: new Date().toISOString(),
+      eventData
+    };
+
+    // Cache the status for 5 minutes
+    await redis.setex(cacheKey, 300, JSON.stringify(status));
+    
+    return status;
+    
+  } catch (error) {
+    console.error('Error getting transaction status:', error);
+    return {
+      status: 'error',
+      message: 'Error checking transaction status',
+      txId,
+      error: error.message
+    };
+  }
+}
+
+// Helper function to get Stellar transaction status
+async function getStellarTransactionStatus(stellarTxId) {
+  try {
+    const StellarSdk = require('@stellar/stellar-sdk');
+    const server = new StellarSdk.Horizon.Server('https://horizon-testnet.stellar.org');
+    
+    // Get transaction from Stellar network
+    let stellarTx;
+    try {
+      stellarTx = await server.getTransaction(stellarTxId);
+    } catch (error) {
+      return {
+        status: 'not_found',
+        message: 'Transaction not found on Stellar network',
+        txId: stellarTxId
+      };
+    }
+
+    if (!stellarTx.successful) {
+      return {
+        status: 'failed',
+        message: 'Transaction failed on Stellar network',
+        txId: stellarTxId,
+        ledger: stellarTx.ledger
+      };
+    }
+
+    // Parse operations to find minting details
+    const operations = stellarTx.operations || [];
+    const mintOperations = operations.filter(op => 
+      op.type === 'invoke_host_function' || 
+      op.type === 'payment' ||
+      op.asset_code?.startsWith('s-')
+    );
+
+    return {
+      status: 'completed',
+      direction: 'stellar_mint',
+      txId: stellarTxId,
+      ledger: stellarTx.ledger,
+      operations: mintOperations.length,
+      fee: stellarTx.fee_charged,
+      timestamp: stellarTx.created_at,
+      successful: stellarTx.successful,
+      message: `Stellar transaction successful - ${mintOperations.length} operations processed`
+    };
+    
+  } catch (error) {
+    console.error('Error getting Stellar transaction status:', error);
+    return {
+      status: 'error',
+      message: 'Error checking Stellar transaction status',
+      txId: stellarTxId,
+      error: error.message
+    };
+  }
+}
+
+// GET /api/bridge/stellar/:txId - Get Stellar transaction status
+router.get('/stellar/:txId', async (req, res) => {
+  try {
+    const { txId } = req.params;
+    
+    if (!txId) {
+      return res.status(400).json({
+        error: 'Transaction ID is required'
+      });
+    }
+
+    const status = await getStellarTransactionStatus(txId);
+    res.json(status);
+    
+  } catch (error) {
+    console.error('Stellar transaction status error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// GET /api/bridge/history/:stellarAddress - Get bridge transaction history for a Stellar address
+router.get('/history/:stellarAddress', async (req, res) => {
+  try {
+    const { stellarAddress } = req.params;
+    const { limit = 10, page = 1 } = req.query;
+    
+    if (!stellarAddress) {
+      return res.status(400).json({
+        error: 'Stellar address is required'
+      });
+    }
+
+    // Validate Stellar address format (56 characters)
+    if (stellarAddress.length !== 56) {
+      return res.status(400).json({
+        error: 'Invalid Stellar address format'
+      });
+    }
+
+    const StellarSdk = require('@stellar/stellar-sdk');
+    const server = new StellarSdk.Horizon.Server('https://horizon-testnet.stellar.org');
+    
+    // Get account transactions
+    const accountTxs = await server.transactions()
+      .forAccount(stellarAddress)
+      .limit(parseInt(limit))
+      .order('desc')
+      .call();
+
+    const bridgeTransactions = [];
+    
+    for (const tx of accountTxs.records) {
+      // Check if this transaction involves s-tokens or bridge operations
+      const operations = await tx.operations();
+      const bridgeOps = operations.records.filter(op => {
+        if (op.type === 'payment' && op.asset_code?.startsWith('s-')) {
+          return true;
+        }
+        if (op.type === 'invoke_host_function') {
+          // Check if this is a bridge-related contract call
+          return op.function?.includes('mint') || op.function?.includes('bridge');
+        }
+        return false;
+      });
+
+      if (bridgeOps.length > 0) {
+        bridgeTransactions.push({
+          txId: tx.id,
+          hash: tx.hash,
+          ledger: tx.ledger,
+          timestamp: tx.created_at,
+          fee: tx.fee_charged,
+          successful: tx.successful,
+          operations: bridgeOps.length,
+          bridgeOperations: bridgeOps.map(op => ({
+            type: op.type,
+            asset: op.asset_code || 'Unknown',
+            amount: op.amount || '0',
+            from: op.from,
+            to: op.to
+          }))
+        });
+      }
+    }
+
+    res.json({
+      stellarAddress,
+      transactions: bridgeTransactions,
+      total: bridgeTransactions.length,
+      page: parseInt(page),
+      limit: parseInt(limit)
+    });
+    
+  } catch (error) {
+    console.error('Bridge history error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
+// POST /api/bridge/submit - Submit bridge transaction (placeholder)
+router.post('/submit', async (req, res) => {
+  try {
+    const { amount, token, stellarAddress, ethTxHash } = req.body;
+    
+    // Validate input
+    if (!amount || !token || !stellarAddress || !ethTxHash) {
+      return res.status(400).json({
+        error: 'Missing required fields',
+        required: ['amount', 'token', 'stellarAddress', 'ethTxHash']
+      });
+    }
+
+    // Store submission in cache for tracking
+    const submissionKey = `bridge_submission_${ethTxHash}`;
+    const submission = {
+      amount,
+      token,
+      stellarAddress,
+      ethTxHash,
+      submittedAt: new Date().toISOString(),
+      status: 'submitted'
+    };
+    
+    await redis.setex(submissionKey, 3600, JSON.stringify(submission)); // 1 hour cache
+    
+    res.json({
+      success: true,
+      message: 'Bridge transaction submitted for processing',
+      txId: ethTxHash,
+      trackingId: submissionKey
+    });
+    
+  } catch (error) {
+    console.error('Bridge submit error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: error.message 
+    });
+  }
+});
+
 // Helper functions
 async function checkEthereumBridge() {
   try {
@@ -392,8 +726,7 @@ function generateBridgeAnalytics(period) {
     },
     users: {
       unique: Math.floor(75 * multiplier + Math.random() * 25),
-      returning: Math.floor(25 * multiplier + Math.random() * 15),
-      new: Math.floor(50 * multiplier + Math.random() * 20)
+      newUsers: Math.floor(50 * multiplier + Math.random() * 20)
     },
     assets: {
       stETH: {

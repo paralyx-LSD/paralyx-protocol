@@ -34,6 +34,7 @@
     "morgan": "^1.10.0",
     "node-cron": "^3.0.3",
     "redis": "^4.6.10",
+    "stellar-sdk": "^13.3.0",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^5.0.0",
     "winston": "^3.11.0"

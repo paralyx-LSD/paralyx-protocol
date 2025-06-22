@@ -191,13 +191,20 @@ const BridgeForm: React.FC = () => {
       
       try {
         const statusRes = await getBridgeStatus(ethTxHash);
+        console.log('Bridge status poll result:', statusRes);
+        
         if (statusRes.status === 'completed' || statusRes.status === 'minted') {
           setBridgeStep("confirmed");
           clearInterval(interval);
-        } else if (statusRes.status === 'failed' || statusRes.status === 'error') {
+          console.log('Bridge transaction completed successfully:', statusRes);
+        } else if (statusRes.status === 'failed' || statusRes.status === 'error' || statusRes.status === 'not_found') {
           setError(statusRes.message || "The bridge transaction failed on the backend.");
           setBridgeStep("failed");
           clearInterval(interval);
+        } else if (statusRes.status === 'processing' || statusRes.status === 'pending') {
+          // Show processing status with progress if available
+          console.log(`Bridge status: ${statusRes.status} - ${statusRes.message || 'Processing transaction...'}`);
+          // Continue polling
         }
         // If still pending, do nothing and wait for the next poll.
       } catch (err: any) {

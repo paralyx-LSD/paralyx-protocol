@@ -15,12 +15,13 @@ fn test_initialize() {
 
     let admin = Address::generate(&env);
     let lending_pool = Address::generate(&env);
+    let bridge_validator = Address::generate(&env);
     let underlying_asset = Address::generate(&env);
     let name = String::from_str(&env, "Test sToken");
     let symbol = String::from_str(&env, "sTest");
     let decimals = 7u32;
 
-    client.initialize(&admin, &lending_pool, &underlying_asset, &name, &symbol, &decimals);
+    client.initialize(&admin, &lending_pool, &bridge_validator, &underlying_asset, &name, &symbol, &decimals);
 
     assert_eq!(client.name(), name);
     assert_eq!(client.symbol(), symbol);
@@ -39,13 +40,14 @@ fn test_double_initialize() {
 
     let admin = Address::generate(&env);
     let lending_pool = Address::generate(&env);
+    let bridge_validator = Address::generate(&env);
     let underlying_asset = Address::generate(&env);
     let name = String::from_str(&env, "Test sToken");
     let symbol = String::from_str(&env, "sTest");
     let decimals = 7u32;
 
-    client.initialize(&admin, &lending_pool, &underlying_asset, &name, &symbol, &decimals);
-    client.initialize(&admin, &lending_pool, &underlying_asset, &name, &symbol, &decimals);
+    client.initialize(&admin, &lending_pool, &bridge_validator, &underlying_asset, &name, &symbol, &decimals);
+    client.initialize(&admin, &lending_pool, &bridge_validator, &underlying_asset, &name, &symbol, &decimals);
 }
 
 #[test]
@@ -58,12 +60,14 @@ fn test_mint() {
 
     let admin = Address::generate(&env);
     let lending_pool = Address::generate(&env);
+    let bridge_validator = Address::generate(&env);
     let underlying_asset = Address::generate(&env);
     let user = Address::generate(&env);
 
     client.initialize(
         &admin, 
         &lending_pool, 
+        &bridge_validator,
         &underlying_asset, 
         &String::from_str(&env, "Test sToken"), 
         &String::from_str(&env, "sTest"), 
@@ -98,12 +102,14 @@ fn test_burn() {
 
     let admin = Address::generate(&env);
     let lending_pool = Address::generate(&env);
+    let bridge_validator = Address::generate(&env);
     let underlying_asset = Address::generate(&env);
     let user = Address::generate(&env);
 
     client.initialize(
         &admin, 
         &lending_pool, 
+        &bridge_validator,
         &underlying_asset, 
         &String::from_str(&env, "Test sToken"), 
         &String::from_str(&env, "sTest"), 
@@ -155,12 +161,14 @@ fn test_burn_insufficient_balance() {
 
     let admin = Address::generate(&env);
     let lending_pool = Address::generate(&env);
+    let bridge_validator = Address::generate(&env);
     let underlying_asset = Address::generate(&env);
     let user = Address::generate(&env);
 
     client.initialize(
         &admin, 
         &lending_pool, 
+        &bridge_validator,
         &underlying_asset, 
         &String::from_str(&env, "Test sToken"), 
         &String::from_str(&env, "sTest"), 
@@ -192,11 +200,13 @@ fn test_exchange_rate_conversion() {
 
     let admin = Address::generate(&env);
     let lending_pool = Address::generate(&env);
+    let bridge_validator = Address::generate(&env);
     let underlying_asset = Address::generate(&env);
 
     client.initialize(
         &admin, 
         &lending_pool, 
+        &bridge_validator,
         &underlying_asset, 
         &String::from_str(&env, "Test sToken"), 
         &String::from_str(&env, "sTest"), 

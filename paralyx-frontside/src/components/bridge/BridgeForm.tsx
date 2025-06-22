@@ -183,7 +183,12 @@ const BridgeForm: React.FC = () => {
   };
 
   const pollBridgeStatus = (ethTxHash: string) => {
+    let attemptCount = 0;
+    const maxAttempts = 40; // 40 attempts * 30 seconds = 20 minutes
+    
     const interval = setInterval(async () => {
+      attemptCount++;
+      
       try {
         const statusRes = await getBridgeStatus(ethTxHash);
         if (statusRes.status === 'completed' || statusRes.status === 'minted') {
@@ -195,20 +200,28 @@ const BridgeForm: React.FC = () => {
           clearInterval(interval);
         }
         // If still pending, do nothing and wait for the next poll.
-      } catch (err) {
-        // If API call fails, keep polling for a while
+      } catch (err: any) {
         console.error("Polling error:", err);
-      }
-    }, 10000); // Poll every 10 seconds
-
-    // Stop polling after 20 minutes to prevent infinite loops
-    setTimeout(() => {
-        if (bridgeStep !== 'confirmed' && bridgeStep !== 'failed') {
-            clearInterval(interval);
-            setError("Polling timed out. Please check the bridge status manually.");
-            setBridgeStep("failed");
+        
+        // If rate limited or too many errors, slow down polling
+        if (err.response?.status === 429 || err.message?.includes('Rate limit')) {
+          console.warn('Rate limited during polling - extending interval');
+          // Stop this interval and restart with longer delay
+          clearInterval(interval);
+          setTimeout(() => pollBridgeStatus(ethTxHash), 60000); // Wait 1 minute before restarting
+          return;
         }
-    }, 1200000);
+      }
+      
+      // Stop polling after max attempts to prevent infinite loops
+      if (attemptCount >= maxAttempts) {
+        clearInterval(interval);
+        if (bridgeStep !== 'confirmed' && bridgeStep !== 'failed') {
+          setError("Polling timed out. Please check the bridge status manually.");
+          setBridgeStep("failed");
+        }
+      }
+    }, 30000); // Poll every 30 seconds to avoid rate limiting
   };
   
   const estimatedTime = "10-15 minutes";

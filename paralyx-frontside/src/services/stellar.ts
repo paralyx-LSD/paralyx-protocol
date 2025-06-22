@@ -418,7 +418,7 @@ export async function getAssetPrice(assetType: string): Promise<number> {
     }
 
     // Parse price from result - simplified
-    return 2000; // Default ETH price, would need proper XDR parsing
+    return 2269.42; // Current wETH price, would need proper XDR parsing
   } catch (error) {
     console.error('Error getting asset price:', error);
     return 0;

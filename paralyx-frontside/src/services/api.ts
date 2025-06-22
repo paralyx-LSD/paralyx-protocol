@@ -26,14 +26,47 @@ api.interceptors.request.use(
   }
 );
 
+// Retry mechanism with exponential backoff
+const retryRequest = async (originalRequest: any, retryCount: number = 0): Promise<any> => {
+  const maxRetries = 3;
+  const baseDelay = 1000; // 1 second
+  
+  if (retryCount >= maxRetries) {
+    throw new Error('Maximum retry attempts reached');
+  }
+  
+  const delay = baseDelay * Math.pow(2, retryCount); // Exponential backoff
+  await new Promise(resolve => setTimeout(resolve, delay));
+  
+  try {
+    return await api.request(originalRequest);
+  } catch (error: any) {
+    if (error.response?.status === 429) {
+      console.log(`Retry attempt ${retryCount + 1}/${maxRetries} in ${delay}ms...`);
+      return retryRequest(originalRequest, retryCount + 1);
+    }
+    throw error;
+  }
+};
+
 // Response interceptor for error handling
 api.interceptors.response.use(
   (response: AxiosResponse) => {
     console.log(`API Response: ${response.status} ${response.config.url}`);
     return response;
   },
-  (error: AxiosError) => {
+  async (error: AxiosError) => {
     console.error('API Response Error:', error.response?.data || error.message);
+    
+    // Handle rate limiting with retry
+    if (error.response?.status === 429) {
+      console.warn('Rate limited - implementing retry with exponential backoff');
+      try {
+        return await retryRequest(error.config);
+      } catch (retryError) {
+        throw new Error('Rate limit exceeded - please wait a few minutes before trying again');
+      }
+    }
     
     // Handle specific error cases
     if (error.code === 'ERR_NETWORK' || error.code === 'ECONNREFUSED') {
@@ -140,11 +173,24 @@ export const getRateModel = async (marketId: string) => {
 // User API calls
 export const getUserPosition = async (walletAddress: string) => {
   try {
+    // Backend expects 56-character Stellar addresses, not Ethereum addresses
+    // If we get an Ethereum address, return empty position
+    if (!walletAddress || walletAddress.length !== 56 || !walletAddress.startsWith('G')) {
+      return {
+        totalSupplied: 0,
+        totalBorrowed: 0,
+        netAPY: 0,
+        healthFactor: 0,
+        liquidationRisk: 'low' as const,
+        positions: []
+      };
+    }
+    
     const response = await api.get(`/api/user/${walletAddress}`);
     return response.data;
   } catch (error: any) {
-    if (error.response?.status === 404) {
-      // Return default empty position for new users
+    if (error.response?.status === 404 || error.response?.status === 400) {
+      // Return default empty position for new users or invalid addresses
       return {
         totalSupplied: 0,
         totalBorrowed: 0,
@@ -248,11 +294,12 @@ export const getUserAnalytics = async () => {
   return response.data;
 };
 
-// Helper function to generate mock price history until real API is available
+
 function generateMockPriceHistory() {
+  const basePrice = 2269.42; // Current wETH price
   return Array.from({ length: 30 }, (_, i) => ({
     date: new Date(Date.now() - (29 - i) * 24 * 60 * 60 * 1000).toISOString(),
-    price: 2000 + Math.sin(i * 0.2) * 200 + Math.random() * 100,
+    price: basePrice + Math.sin(i * 0.2) * 100 + Math.random() * 50,
   }));
 }
 

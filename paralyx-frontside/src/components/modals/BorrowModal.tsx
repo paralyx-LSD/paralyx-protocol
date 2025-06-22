@@ -65,11 +65,11 @@ const BorrowModal: React.FC<BorrowModalProps> = ({
             console.warn('Could not fetch asset price:', priceError);
             // Fallback prices
             const fallbackPrices: Record<string, number> = {
-              ETH: 2000,
-              WETH: 2000,
+              ETH: 2269.42,
+              WETH: 2269.42,
               USDC: 1,
-              STETH: 1980,
-              WSTETH: 2100,
+                              STETH: 2269.42,
+                              WSTETH: 2420.15,
             };
             setAssetPrice(fallbackPrices[market.asset] || 1);
           }

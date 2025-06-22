@@ -63,7 +63,7 @@ interface DataProviderProps {
 }
 
 export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
-  const { isConnected, walletAddress } = useWallet();
+  const { isConnected, walletAddress, stellarWallet } = useWallet();
   const [protocolData, setProtocolData] = useState<ProtocolData | null>(null);
   const [markets, setMarkets] = useState<MarketData[]>([]);
   const [userPosition, setUserPosition] = useState<UserPosition | null>(null);
@@ -83,10 +83,10 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       const marketsResponse = await api.getMarkets();
       setMarkets(marketsResponse);
 
-      // Fetch user data if connected
-      if (isConnected && walletAddress) {
+      // Fetch user data if connected (prefer Stellar address for backend API)
+      if (isConnected && stellarWallet.isConnected && stellarWallet.address) {
         try {
-          const userResponse = await api.getUserPosition(walletAddress);
+          const userResponse = await api.getUserPosition(stellarWallet.address);
           
           // Transform API response to UserPosition format
           if (userResponse.position && userResponse.position.hasPosition) {
@@ -144,11 +144,11 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   useEffect(() => {
     refreshData();
     
-    // Set up auto-refresh every 30 seconds
-    const interval = setInterval(refreshData, 30000);
+    // Set up auto-refresh every 2 minutes to avoid rate limiting
+    const interval = setInterval(refreshData, 120000);
     
     return () => clearInterval(interval);
-  }, [isConnected, walletAddress]);
+  }, [isConnected, stellarWallet.isConnected, stellarWallet.address]);
 
   const value: DataContextType = {
     protocolData,

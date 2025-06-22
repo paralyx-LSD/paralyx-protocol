@@ -73,16 +73,18 @@ app.use(helmet({
 }));
 app.use(compression());
 
-// Rate limiting
+// Rate limiting - more generous for development
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 500, // Increased from 100 to 500
   message: {
     error: 'Too many requests from this IP, please try again later.',
     retryAfter: Math.ceil((parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000) / 1000)
   },
   standardHeaders: true,
   legacyHeaders: false,
+  // Skip rate limiting for health checks
+  skip: (req) => req.path === '/health'
 });
 app.use('/api/', limiter);
 
@@ -165,23 +167,31 @@ app.use('*', (req, res) => {
 // Error handling middleware
 app.use(errorHandler);
 
+// Global server reference for graceful shutdown
+let server;
+
 // Graceful shutdown handler
 const gracefulShutdown = () => {
   logger.info('Received shutdown signal, closing server gracefully...');
   
-  server.close(() => {
-    logger.info('HTTP server closed');
-    
-    // Close Redis connection
-    if (global.redisClient) {
-      global.redisClient.quit(() => {
-        logger.info('Redis connection closed');
+  if (server) {
+    server.close(() => {
+      logger.info('HTTP server closed');
+      
+      // Close Redis connection
+      if (global.redisClient) {
+        global.redisClient.quit(() => {
+          logger.info('Redis connection closed');
+          process.exit(0);
+        });
+      } else {
         process.exit(0);
-      });
-    } else {
-      process.exit(0);
-    }
-  });
+      }
+    });
+  } else {
+    logger.info('No server instance to close');
+    process.exit(0);
+  }
   
   // Force close after 10 seconds
   setTimeout(() => {
@@ -202,7 +212,7 @@ async function startServer() {
     logger.info('Background scheduler initialized');
     
     // Start HTTP server
-    const server = app.listen(PORT, () => {
+    server = app.listen(PORT, () => {
       logger.info(`Paralyx API server started on port ${PORT}`);
       logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
       logger.info(`Documentation available at: http://localhost:${PORT}/docs`);

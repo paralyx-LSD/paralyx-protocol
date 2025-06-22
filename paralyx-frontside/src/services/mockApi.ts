@@ -155,7 +155,7 @@ export const getMarketDetails = async (marketId: string) => {
     ...market,
     priceHistory: Array.from({ length: 30 }, (_, i) => ({
       date: new Date(Date.now() - (29 - i) * 24 * 60 * 60 * 1000).toISOString(),
-      price: 2000 + Math.sin(i * 0.2) * 200 + Math.random() * 100,
+      price: 2269.42 + Math.sin(i * 0.2) * 100 + Math.random() * 50,
     })),
   };
 };
@@ -378,7 +378,7 @@ export const getHistoricalData = async (
       Date.now() - (days - 1 - i) * 24 * 60 * 60 * 1000
     ).toISOString(),
     value:
-      2000000000 + Math.sin(i * 0.1) * 200000000 + Math.random() * 100000000,
+      2269420000 + Math.sin(i * 0.1) * 100000000 + Math.random() * 50000000,
   }));
 };
 

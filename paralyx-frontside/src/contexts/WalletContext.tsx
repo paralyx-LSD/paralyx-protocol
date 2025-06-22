@@ -1,219 +1,339 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import toast from 'react-hot-toast';
+import * as stellar from '../services/stellar';
 
-// Define types for each wallet's state
+// Sepolia network configuration
+const SEPOLIA_CHAIN_ID = 11155111;
+const SEPOLIA_CHAIN_ID_HEX = '0xaa36a7';
+
+const SEPOLIA_NETWORK_CONFIG = {
+  chainId: SEPOLIA_CHAIN_ID_HEX,
+  chainName: 'Sepolia Test Network',
+  nativeCurrency: {
+    name: 'Sepolia ETH',
+    symbol: 'ETH',
+    decimals: 18,
+  },
+  rpcUrls: ['https://sepolia.infura.io/v3/'],
+  blockExplorerUrls: ['https://sepolia.etherscan.io/'],
+};
+
+// Ethereum wallet state interface
 interface EthereumWalletState {
-  address: string | null;
   isConnected: boolean;
-  chainId: string | null;
+  address: string | null;
+  balance: number;
+  chainId: number | null;
 }
 
+// Stellar wallet state interface
 interface StellarWalletState {
-  address: string | null;
   isConnected: boolean;
+  address: string | null;
+  balance: number;
+  network: string;
 }
 
-// The main context type
+// Combined wallet context type
 interface WalletContextType {
   ethWallet: EthereumWalletState;
   stellarWallet: StellarWalletState;
-  isConnecting: boolean;
   
-  connectWallet: (type: 'metamask' | 'freighter') => Promise<void>;
-  disconnectWallet: (type: 'metamask' | 'freighter') => void;
-  switchEthereumNetwork: (chainId: string) => Promise<void>;
-
-  // Placeholder functions remain for now, to be integrated later
-  transactions: any[];
-  accountInfo: any;
-  supplyTokens: (amount: number) => Promise<string>;
-  borrowTokens: (amount: number) => Promise<string>;
-  repayTokens: (amount: number) => Promise<string>;
-  withdrawTokens: (amount: number) => Promise<string>;
-  refreshAccountInfo: () => Promise<void>;
-  getBalance: (assetType?: string) => Promise<number>;
+  // Ethereum wallet functions
+  connectEthWallet: () => Promise<void>;
+  disconnectEthWallet: () => void;
+  switchToSepolia: () => Promise<void>;
+  
+  // Stellar wallet functions
+  connectStellarWallet: () => Promise<void>;
+  disconnectStellarWallet: () => void;
+  
+  // Generic wallet functions for WalletModal
+  connectWallet: (type: 'freighter' | 'metamask') => Promise<void>;
+  isConnecting: boolean;
+  network: 'testnet' | 'mainnet';
+  switchNetwork: (network: 'testnet' | 'mainnet') => void;
+  
+  // Backward compatibility
+  isConnected: boolean;
+  walletAddress: string | null;
+  
+  // Stellar lending functions (real implementations)
+  supplyTokens: (amount: number, assetType?: string) => Promise<string>;
+  borrowTokens: (amount: number, assetType?: string) => Promise<string>;
+  repayTokens: (amount: number, assetType?: string) => Promise<string>;
+  withdrawTokens: (amount: number, assetType?: string) => Promise<string>;
+  getAccountInfo: () => Promise<stellar.AccountInfo>;
+  getTokenBalance: (assetType?: string) => Promise<number>;
+  getAssetPrice: (assetType: string) => Promise<number>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
-
-export const useWallet = () => {
-  const context = useContext(WalletContext);
-  if (!context) {
-    throw new Error('useWallet must be used within a WalletProvider');
-  }
-  return context;
-};
 
 interface WalletProviderProps {
   children: ReactNode;
 }
 
-const isMetaMaskInstalled = () => typeof window !== 'undefined' && window.ethereum?.isMetaMask;
-const isFreighterInstalled = () => typeof window !== 'undefined' && !!window.freighter;
-
 export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
+  // Ethereum wallet state
   const [ethWallet, setEthWallet] = useState<EthereumWalletState>({
-    address: null,
     isConnected: false,
+    address: null,
+    balance: 0,
     chainId: null,
   });
+
+  // Stellar wallet state
   const [stellarWallet, setStellarWallet] = useState<StellarWalletState>({
-    address: null,
     isConnected: false,
+    address: null,
+    balance: 0,
+    network: 'TESTNET',
   });
-  const [isConnecting, setIsConnecting] = useState(false);
-  
-  // Placeholder state
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [accountInfo, setAccountInfo] = useState<any>(null);
 
-  // --- Ethereum Logic ---
-  const connectMetaMask = async () => {
-    if (!isMetaMaskInstalled()) {
-      toast.error('MetaMask is not installed.');
-      window.open('https://metamask.io/download/', '_blank');
-      return;
-    }
-    try {
-      const accounts = await window.ethereum!.request({ method: 'eth_requestAccounts' });
-      if (accounts.length > 0) {
-        const chainId = await window.ethereum!.request({ method: 'eth_chainId' });
-        setEthWallet({ address: accounts[0], isConnected: true, chainId });
-        toast.success('MetaMask connected!');
-      }
-    } catch (err: any) {
-      toast.error(err.code === 4001 ? 'Connection rejected.' : 'Failed to connect MetaMask.');
-    }
-  };
-
-  const switchEthereumNetwork = async (chainId: string) => {
-    if (!isMetaMaskInstalled()) return;
-    try {
-      await window.ethereum!.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId }],
-      });
-    } catch (err: any) {
-      // Handle common errors like chain not added
-      console.error("Failed to switch network", err);
-      toast.error("Failed to switch network.");
-    }
-  };
-
-  const disconnectMetaMask = () => {
-    setEthWallet({ address: null, isConnected: false, chainId: null });
-    localStorage.removeItem('eth_wallet_connected');
-    toast.success('MetaMask disconnected.');
-  };
-
-  // --- Stellar Logic ---
-  const connectFreighter = async () => {
-    if (!isFreighterInstalled()) {
-      toast.error('Freighter is not installed.');
-      window.open('https://www.freighter.app/', '_blank');
-      return;
-    }
-    try {
-      await window.freighter!.requestAccess();
-      const publicKey = await window.freighter!.getPublicKey();
-      setStellarWallet({ address: publicKey, isConnected: true });
-      toast.success('Freighter connected!');
-    } catch (err: any) {
-      toast.error('Failed to connect Freighter.');
-    }
-  };
-
-  const disconnectFreighter = () => {
-    setStellarWallet({ address: null, isConnected: false });
-    localStorage.removeItem('stellar_wallet_connected');
-    toast.success('Freighter disconnected.');
-  };
-
-  // --- Generic Handlers ---
-  const connectWallet = async (type: 'metamask' | 'freighter') => {
-    setIsConnecting(true);
-    if (type === 'metamask') {
-      await connectMetaMask();
-    } else {
-      await connectFreighter();
-    }
-    setIsConnecting(false);
-  };
-  
-  const disconnectWallet = (type: 'metamask' | 'freighter') => {
-    if (type === 'metamask') {
-      disconnectMetaMask();
-    } else {
-      disconnectFreighter();
-    }
-  };
-  
-  // --- Effects ---
-  // MetaMask event listeners
+  // Load persisted wallet connections on mount
   useEffect(() => {
-    if (!isMetaMaskInstalled()) return;
-    const handleAccountsChanged = (accounts: string[]) => {
-      if (accounts.length === 0) {
-        disconnectMetaMask();
-      } else if (ethWallet.isConnected) {
-        setEthWallet(prev => ({ ...prev, address: accounts[0] }));
-      }
-    };
-    const handleChainChanged = (chainId: string) => {
-      if (ethWallet.isConnected) {
-        setEthWallet(prev => ({ ...prev, chainId }));
-      }
-    };
-    window.ethereum!.on('accountsChanged', handleAccountsChanged);
-    window.ethereum!.on('chainChanged', handleChainChanged);
-    return () => {
-      window.ethereum!.removeListener('accountsChanged', handleAccountsChanged);
-      window.ethereum!.removeListener('chainChanged', handleChainChanged);
-    };
-  }, [ethWallet.isConnected]);
-
-  // Auto-connect from localStorage
-  useEffect(() => {
-    if (localStorage.getItem('eth_wallet_connected') === 'true' && isMetaMaskInstalled()) {
-      connectMetaMask();
+    const ethConnected = localStorage.getItem('ethWalletConnected') === 'true';
+    const stellarConnected = localStorage.getItem('stellarWalletConnected') === 'true';
+    
+    if (ethConnected) {
+      connectEthWallet();
     }
-    if (localStorage.getItem('stellar_wallet_connected') === 'true' && isFreighterInstalled()) {
-      connectFreighter();
+    
+    if (stellarConnected) {
+      connectStellarWallet();
     }
   }, []);
 
-  // Save connection state to localStorage
-  useEffect(() => {
-    localStorage.setItem('eth_wallet_connected', String(ethWallet.isConnected));
-  }, [ethWallet.isConnected]);
+  // Ethereum wallet functions
+  const connectEthWallet = async () => {
+    try {
+      if (!window.ethereum) {
+        throw new Error('MetaMask not found');
+      }
 
-  useEffect(() => {
-    localStorage.setItem('stellar_wallet_connected', String(stellarWallet.isConnected));
-  }, [stellarWallet.isConnected]);
+      const accounts = await window.ethereum.request({
+        method: 'eth_requestAccounts',
+      });
 
-  // --- Mock Functions (to be replaced) ---
-  const supplyTokens = async (amount: number) => `mock_tx_supply_${amount}`;
-  const borrowTokens = async (amount: number) => `mock_tx_borrow_${amount}`;
-  const repayTokens = async (amount: number) => `mock_tx_repay_${amount}`;
-  const withdrawTokens = async (amount: number) => `mock_tx_withdraw_${amount}`;
-  const refreshAccountInfo = async () => {};
-  const getBalance = async (assetType?: string) => Math.random() * 100;
-  
+      const chainId = await window.ethereum.request({
+        method: 'eth_chainId',
+      });
+
+      const balance = await window.ethereum.request({
+        method: 'eth_getBalance',
+        params: [accounts[0], 'latest'],
+      });
+
+      setEthWallet({
+        isConnected: true,
+        address: accounts[0],
+        balance: parseInt(balance, 16) / 1e18,
+        chainId: parseInt(chainId, 16),
+      });
+
+      localStorage.setItem('ethWalletConnected', 'true');
+
+      // Auto-switch to Sepolia if not already on it
+      const currentChainId = parseInt(chainId, 16);
+      if (currentChainId !== SEPOLIA_CHAIN_ID) {
+        console.log('Switching to Sepolia network...');
+        try {
+          await window.ethereum.request({
+            method: 'wallet_switchEthereumChain',
+            params: [{ chainId: SEPOLIA_CHAIN_ID_HEX }],
+          });
+          
+          // Update chain ID after successful switch
+          const newChainId = await window.ethereum.request({
+            method: 'eth_chainId',
+          });
+          
+          setEthWallet(prev => ({
+            ...prev,
+            chainId: parseInt(newChainId, 16),
+          }));
+          
+          console.log('Successfully switched to Sepolia network');
+        } catch (switchError: any) {
+          // If the network is not added, try to add it
+          if (switchError.code === 4902) {
+            try {
+              await window.ethereum.request({
+                method: 'wallet_addEthereumChain',
+                params: [SEPOLIA_NETWORK_CONFIG],
+              });
+              console.log('Sepolia network added and switched');
+            } catch (addError) {
+              console.error('Failed to add Sepolia network:', addError);
+              throw new Error('Failed to add Sepolia network to MetaMask');
+            }
+          } else {
+            console.error('Failed to switch to Sepolia:', switchError);
+            throw new Error('Failed to switch to Sepolia network');
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error connecting Ethereum wallet:', error);
+      throw error;
+    }
+  };
+
+  const disconnectEthWallet = () => {
+    setEthWallet({
+      isConnected: false,
+      address: null,
+      balance: 0,
+      chainId: null,
+    });
+    localStorage.removeItem('ethWalletConnected');
+  };
+
+  const switchToSepolia = async () => {
+    try {
+      if (!window.ethereum) {
+        throw new Error('MetaMask not found');
+      }
+
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: SEPOLIA_CHAIN_ID_HEX }],
+      });
+
+      const chainId = await window.ethereum.request({
+        method: 'eth_chainId',
+      });
+
+      setEthWallet({
+        ...ethWallet,
+        chainId: parseInt(chainId, 16),
+      });
+    } catch (error) {
+      console.error('Error switching to Sepolia:', error);
+      throw error;
+    }
+  };
+
+  // Stellar wallet functions
+  const connectStellarWallet = async () => {
+    try {
+      if (!window.freighter) {
+        throw new Error('Freighter wallet not found');
+      }
+
+      // Check if Freighter is available and request access
+      const isConnected = await window.freighter.isConnected();
+      if (!isConnected) {
+        await window.freighter.requestAccess();
+      }
+
+      // Get public key
+      const { publicKey } = await window.freighter.getPublicKey({ 
+        network: 'TESTNET' 
+      });
+
+      setStellarWallet({
+        isConnected: true,
+        address: publicKey,
+        balance: 0, // We'll fetch this separately
+        network: 'TESTNET',
+      });
+
+      localStorage.setItem('stellarWalletConnected', 'true');
+    } catch (error: any) {
+      console.error('Error connecting Stellar wallet:', error);
+      throw error;
+    }
+  };
+
+  const disconnectStellarWallet = () => {
+    setStellarWallet({
+      isConnected: false,
+      address: null,
+      balance: 0,
+      network: 'TESTNET',
+    });
+    localStorage.removeItem('stellarWalletConnected');
+  };
+
+  // Real Stellar lending functions using stellar.ts service
+  const supplyTokens = async (amount: number, assetType: string = 'WETH'): Promise<string> => {
+    if (!stellarWallet.address) {
+      throw new Error('Stellar wallet not connected');
+    }
+    
+    return await stellar.supplyTokens(stellarWallet.address, amount, assetType);
+  };
+
+  const borrowTokens = async (amount: number, assetType: string = 'WETH'): Promise<string> => {
+    if (!stellarWallet.address) {
+      throw new Error('Stellar wallet not connected');
+    }
+    
+    return await stellar.borrowTokens(stellarWallet.address, amount, assetType);
+  };
+
+  const repayTokens = async (amount: number, assetType: string = 'WETH'): Promise<string> => {
+    if (!stellarWallet.address) {
+      throw new Error('Stellar wallet not connected');
+    }
+    
+    return await stellar.repayTokens(stellarWallet.address, amount, assetType);
+  };
+
+  const withdrawTokens = async (amount: number, assetType: string = 'WETH'): Promise<string> => {
+    if (!stellarWallet.address) {
+      throw new Error('Stellar wallet not connected');
+    }
+    
+    return await stellar.withdrawTokens(stellarWallet.address, amount, assetType);
+  };
+
+  const getAccountInfo = async (): Promise<stellar.AccountInfo> => {
+    if (!stellarWallet.address) {
+      throw new Error('Stellar wallet not connected');
+    }
+    
+    return await stellar.getAccountInfo(stellarWallet.address);
+  };
+
+  const getTokenBalance = async (assetType: string = 'WETH'): Promise<number> => {
+    if (!stellarWallet.address) {
+      throw new Error('Stellar wallet not connected');
+    }
+    
+    return await stellar.getTokenBalance(stellarWallet.address, assetType);
+  };
+
+  const getAssetPrice = async (assetType: string): Promise<number> => {
+    return await stellar.getAssetPrice(assetType);
+  };
+
   const value: WalletContextType = {
     ethWallet,
     stellarWallet,
-    isConnecting,
-    connectWallet,
-    disconnectWallet,
-    switchEthereumNetwork,
-    transactions,
-    accountInfo,
+    connectEthWallet,
+    disconnectEthWallet,
+    connectStellarWallet,
+    disconnectStellarWallet,
     supplyTokens,
     borrowTokens,
     repayTokens,
     withdrawTokens,
-    refreshAccountInfo,
-    getBalance,
+    getAccountInfo,
+    getTokenBalance,
+    getAssetPrice,
+    switchToSepolia,
+    connectWallet: async (type: 'freighter' | 'metamask') => {
+      // Implementation needed
+    },
+    isConnecting: false,
+    network: 'testnet',
+    switchNetwork: (network: 'testnet' | 'mainnet') => {
+      // Implementation needed
+    },
+    isConnected: false,
+    walletAddress: null,
   };
 
   return (
@@ -221,4 +341,12 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       {children}
     </WalletContext.Provider>
   );
+};
+
+export const useWallet = () => {
+  const context = useContext(WalletContext);
+  if (context === undefined) {
+    throw new Error('useWallet must be used within a WalletProvider');
+  }
+  return context;
 };

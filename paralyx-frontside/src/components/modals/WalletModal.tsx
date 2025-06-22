@@ -29,7 +29,7 @@ const WalletModal: React.FC<WalletModalProps> = ({ isOpen, onClose }) => {
       color: 'bg-orange-500',
       available: typeof window !== 'undefined' && window.ethereum?.isMetaMask,
       downloadUrl: 'https://metamask.io/download/',
-      networks: ['Ethereum Mainnet', 'Goerli Testnet']
+      networks: ['Ethereum Mainnet', 'Sepolia Testnet']
     },
     {
       id: 'freighter' as const,

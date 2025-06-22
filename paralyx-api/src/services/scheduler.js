@@ -5,6 +5,29 @@ const logger = require('../utils/logger');
 
 let schedulerInitialized = false;
 
+// Helper function to convert BigInt values to strings for JSON serialization
+function serializeBigInts(obj) {
+  if (obj === null || obj === undefined) return obj;
+  
+  if (typeof obj === 'bigint') {
+    return obj.toString();
+  }
+  
+  if (Array.isArray(obj)) {
+    return obj.map(serializeBigInts);
+  }
+  
+  if (typeof obj === 'object') {
+    const result = {};
+    for (const [key, value] of Object.entries(obj)) {
+      result[key] = serializeBigInts(value);
+    }
+    return result;
+  }
+  
+  return obj;
+}
+
 // Initialize background data refresh scheduler
 async function initializeScheduler() {
   if (schedulerInitialized) {
@@ -19,7 +42,7 @@ async function initializeScheduler() {
     try {
       logger.debug('Refreshing protocol stats...');
       const stats = await stellarService.getProtocolStats();
-      await cache.set(cacheKeys.protocolStats(), stats, 300);
+      await cache.set(cacheKeys.protocolStats(), serializeBigInts(stats), 300);
       logger.debug('Protocol stats refreshed');
     } catch (error) {
       logger.error('Failed to refresh protocol stats:', error);
@@ -31,7 +54,7 @@ async function initializeScheduler() {
     try {
       logger.debug('Refreshing interest rates...');
       const rates = await stellarService.getInterestRates();
-      await cache.set(cacheKeys.interestRates(), rates, 120);
+      await cache.set(cacheKeys.interestRates(), serializeBigInts(rates), 120);
       logger.debug('Interest rates refreshed');
     } catch (error) {
       logger.error('Failed to refresh interest rates:', error);
@@ -43,7 +66,7 @@ async function initializeScheduler() {
     try {
       logger.debug('Refreshing asset prices...');
       const prices = await stellarService.getAssetPrices();
-      await cache.set('prices:current', prices, 60);
+      await cache.set('prices:current', serializeBigInts(prices), 60);
       logger.debug('Asset prices refreshed');
     } catch (error) {
       logger.error('Failed to refresh asset prices:', error);
@@ -60,12 +83,12 @@ async function initializeScheduler() {
         stellarService.getAssetPrices()
       ]);
       
-      const marketData = {
+      const marketData = serializeBigInts({
         stats,
         rates,
         prices,
         timestamp: new Date().toISOString()
-      };
+      });
       
       await cache.set(cacheKeys.marketData(), marketData, 180);
       logger.debug('Market data refreshed');
@@ -126,7 +149,7 @@ async function initializeScheduler() {
 async function warmupProtocolStats() {
   try {
     const stats = await stellarService.getProtocolStats();
-    await cache.set(cacheKeys.protocolStats(), stats, 300);
+    await cache.set(cacheKeys.protocolStats(), serializeBigInts(stats), 300);
     logger.debug('Protocol stats warmed up');
   } catch (error) {
     logger.warn('Failed to warm up protocol stats:', error);
@@ -136,7 +159,7 @@ async function warmupProtocolStats() {
 async function warmupInterestRates() {
   try {
     const rates = await stellarService.getInterestRates();
-    await cache.set(cacheKeys.interestRates(), rates, 120);
+    await cache.set(cacheKeys.interestRates(), serializeBigInts(rates), 120);
     logger.debug('Interest rates warmed up');
   } catch (error) {
     logger.warn('Failed to warm up interest rates:', error);
@@ -146,7 +169,7 @@ async function warmupInterestRates() {
 async function warmupAssetPrices() {
   try {
     const prices = await stellarService.getAssetPrices();
-    await cache.set('prices:current', prices, 60);
+    await cache.set('prices:current', serializeBigInts(prices), 60);
     logger.debug('Asset prices warmed up');
   } catch (error) {
     logger.warn('Failed to warm up asset prices:', error);
@@ -161,12 +184,12 @@ async function warmupMarketData() {
       stellarService.getAssetPrices()
     ]);
     
-    const marketData = {
+    const marketData = serializeBigInts({
       stats,
       rates,
       prices,
       timestamp: new Date().toISOString()
-    };
+    });
     
     await cache.set(cacheKeys.marketData(), marketData, 180);
     logger.debug('Market data warmed up');

@@ -33,18 +33,18 @@ router.get('/stats',
     try {
       const stats = await stellarService.getProtocolStats();
       
-      // Calculate additional metrics
-      const totalSupply = stats.totalSupply / 1000000; // Convert from 7-decimal
-      const totalDebt = stats.totalDebt / 1000000;
-      const utilizationRate = stats.utilizationRate / 1000000;
-      const totalLiquidity = stats.totalLiquidity / 1000000;
+      // Calculate additional metrics - convert BigInt to Number
+      const totalSupply = Number(stats.totalSupply) / 1000000;
+      const totalDebt = Number(stats.totalDebt) / 1000000;
+      const utilizationRate = Number(stats.utilizationRate) / 1000000;
+      const totalLiquidity = Number(stats.totalLiquidity) / 1000000;
       
       res.json({
         totalSupply,
         totalDebt,
         totalLiquidity,
         utilizationRate,
-        exchangeRate: stats.exchangeRate / 1000000,
+        exchangeRate: Number(stats.exchangeRate) / 1000000,
         protocolHealth: calculateProtocolHealth(utilizationRate),
         metrics: {
           totalValueLocked: totalSupply,
@@ -53,7 +53,15 @@ router.get('/stats',
           utilizationPercentage: utilizationRate * 100,
           liquidityRatio: totalSupply > 0 ? (totalLiquidity / totalSupply) * 100 : 0
         },
-        raw: stats, // Include raw values for development
+        raw: {
+          ...stats,
+          // Convert BigInt values to strings for JSON serialization
+          totalSupply: stats.totalSupply.toString(),
+          totalDebt: stats.totalDebt.toString(),
+          utilizationRate: stats.utilizationRate.toString(),
+          totalLiquidity: stats.totalLiquidity.toString(),
+          exchangeRate: stats.exchangeRate.toString()
+        },
         timestamp: stats.timestamp
       });
       
@@ -85,9 +93,9 @@ router.get('/overview',
         stellarService.getAssetPrices()
       ]);
       
-      const totalSupply = stats.totalSupply / 1000000;
-      const totalDebt = stats.totalDebt / 1000000;
-      const utilizationRate = stats.utilizationRate / 1000000;
+      const totalSupply = Number(stats.totalSupply) / 1000000;
+      const totalDebt = Number(stats.totalDebt) / 1000000;
+      const utilizationRate = Number(stats.utilizationRate) / 1000000;
       
       res.json({
         protocol: {
@@ -106,8 +114,8 @@ router.get('/overview',
         rates: {
           supplyAPY: rates.supplyAPY,
           borrowAPY: rates.borrowAPY,
-          supplyRate: rates.supplyRate / 1000000,
-          borrowRate: rates.borrowRate / 1000000
+          supplyRate: Number(rates.supplyRate) / 1000000,
+          borrowRate: Number(rates.borrowRate) / 1000000
         },
         prices: prices.prices,
         markets: [
@@ -155,9 +163,9 @@ router.get('/health',
   async (req, res, next) => {
     try {
       const stats = await stellarService.getProtocolStats();
-      const utilizationRate = stats.utilizationRate / 1000000;
-      const totalSupply = stats.totalSupply / 1000000;
-      const totalDebt = stats.totalDebt / 1000000;
+      const utilizationRate = Number(stats.utilizationRate) / 1000000;
+      const totalSupply = Number(stats.totalSupply) / 1000000;
+      const totalDebt = Number(stats.totalDebt) / 1000000;
       
       const health = calculateProtocolHealth(utilizationRate);
       

@@ -238,7 +238,7 @@ class StellarMinter {
       const contract = new StellarSdk.Contract(config.stellar.contractId);
       
       // Create the mint operation
-      // This assumes your s-token contract has a mint function that can be called by the bridge
+      // Testing with regular mint function first
       const mintOperation = contract.call(
         'mint',
         StellarSdk.Address.fromString(stellarAddress).toScVal(),
@@ -254,17 +254,10 @@ class StellarMinter {
       .setTimeout(300) // 5 minutes timeout
       .build();
 
-      // Simulate the transaction first
-      const simResult = await this.rpc.simulateTransaction(transaction);
-      
-      if (!StellarSdk.SorobanRpc.Api.isSimulationSuccess(simResult)) {
-        throw new Error(`Simulation failed: ${JSON.stringify(simResult)}`);
-      }
-
-      // Prepare transaction with simulation results
+      // Use the server's prepareTransaction method which handles simulation and assembly
       const preparedTransaction = await this.rpc.prepareTransaction(transaction);
 
-      // Sign the transaction
+      // Sign the prepared transaction
       preparedTransaction.sign(this.sourceKeypair);
 
       return preparedTransaction;

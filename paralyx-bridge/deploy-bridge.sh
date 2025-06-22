@@ -3,7 +3,7 @@
 # Paralyx Bridge Deployment Script
 set -e
 
-echo "🚀 Paralyx Bridge Deployment Script"
+echo " Paralyx Bridge Deployment Script"
 echo "======================================"
 
 # Colors for output

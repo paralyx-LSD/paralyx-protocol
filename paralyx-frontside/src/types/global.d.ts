@@ -36,5 +36,3 @@ interface FreighterProvider {
   isConnected: () => Promise<boolean>;
   requestAccess: () => Promise<{ publicKey: string }>;
 }
-
-export {};

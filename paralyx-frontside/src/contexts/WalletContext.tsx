@@ -1,28 +1,30 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import toast from 'react-hot-toast';
-import * as blockchain from '../services/blockchain';
 
-interface Transaction {
-  hash: string;
-  type: 'supply' | 'borrow' | 'repay' | 'withdraw';
-  amount: number;
-  status: 'pending' | 'confirmed' | 'failed';
-  timestamp: Date;
+// Define types for each wallet's state
+interface EthereumWalletState {
+  address: string | null;
+  isConnected: boolean;
+  chainId: string | null;
 }
 
-interface WalletContextType {
+interface StellarWalletState {
+  address: string | null;
   isConnected: boolean;
-  walletAddress: string | null;
-  walletType: 'freighter' | 'metamask' | null;
-  network: 'testnet' | 'mainnet';
+}
+
+// The main context type
+interface WalletContextType {
+  ethWallet: EthereumWalletState;
+  stellarWallet: StellarWalletState;
   isConnecting: boolean;
-  connectWallet: (type: 'freighter' | 'metamask') => Promise<void>;
-  disconnectWallet: () => void;
-  switchNetwork: (network: 'testnet' | 'mainnet') => void;
-  chainId: string | null;
   
-  // New blockchain functionality
-  transactions: Transaction[];
+  connectWallet: (type: 'metamask' | 'freighter') => Promise<void>;
+  disconnectWallet: (type: 'metamask' | 'freighter') => void;
+  switchEthereumNetwork: (chainId: string) => Promise<void>;
+
+  // Placeholder functions remain for now, to be integrated later
+  transactions: any[];
   accountInfo: any;
   supplyTokens: (amount: number) => Promise<string>;
   borrowTokens: (amount: number) => Promise<string>;
@@ -46,273 +48,172 @@ interface WalletProviderProps {
   children: ReactNode;
 }
 
-// MetaMask detection
-const isMetaMaskInstalled = () => {
-  return typeof window !== 'undefined' && window.ethereum && window.ethereum.isMetaMask;
-};
-
-// Freighter detection
-const isFreighterInstalled = () => {
-  return typeof window !== 'undefined' && window.freighter;
-};
+const isMetaMaskInstalled = () => typeof window !== 'undefined' && window.ethereum?.isMetaMask;
+const isFreighterInstalled = () => typeof window !== 'undefined' && !!window.freighter;
 
 export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
-  const [isConnected, setIsConnected] = useState(false);
-  const [walletAddress, setWalletAddress] = useState<string | null>(null);
-  const [walletType, setWalletType] = useState<'freighter' | 'metamask' | null>(null);
-  const [network, setNetwork] = useState<'testnet' | 'mainnet'>('testnet');
+  const [ethWallet, setEthWallet] = useState<EthereumWalletState>({
+    address: null,
+    isConnected: false,
+    chainId: null,
+  });
+  const [stellarWallet, setStellarWallet] = useState<StellarWalletState>({
+    address: null,
+    isConnected: false,
+  });
   const [isConnecting, setIsConnecting] = useState(false);
-  const [chainId, setChainId] = useState<string | null>(null);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  
+  // Placeholder state
+  const [transactions, setTransactions] = useState<any[]>([]);
   const [accountInfo, setAccountInfo] = useState<any>(null);
 
-  // MetaMask connection
+  // --- Ethereum Logic ---
   const connectMetaMask = async () => {
     if (!isMetaMaskInstalled()) {
-      toast.error('MetaMask is not installed. Please install MetaMask extension.');
+      toast.error('MetaMask is not installed.');
       window.open('https://metamask.io/download/', '_blank');
       return;
     }
-
     try {
-      // Request account access
-      const accounts = await window.ethereum.request({
-        method: 'eth_requestAccounts',
-      });
-
+      const accounts = await window.ethereum!.request({ method: 'eth_requestAccounts' });
       if (accounts.length > 0) {
-        const address = accounts[0];
-        setWalletAddress(address);
-        setWalletType('metamask');
-        setIsConnected(true);
-
-        // Get chain ID
-        const chainId = await window.ethereum.request({
-          method: 'eth_chainId',
-        });
-        setChainId(chainId);
-
-        // Check if we're on the correct network
-        const expectedChainId = network === 'mainnet' ? '0x1' : '0x5'; // Mainnet or Goerli
-        if (chainId !== expectedChainId) {
-          await switchEthereumNetwork(expectedChainId);
-        }
-
-        toast.success('MetaMask connected successfully!');
+        const chainId = await window.ethereum!.request({ method: 'eth_chainId' });
+        setEthWallet({ address: accounts[0], isConnected: true, chainId });
+        toast.success('MetaMask connected!');
       }
-    } catch (error: any) {
-      console.error('MetaMask connection error:', error);
-      if (error.code === 4001) {
-        toast.error('Connection rejected by user');
-      } else {
-        toast.error('Failed to connect MetaMask');
-      }
+    } catch (err: any) {
+      toast.error(err.code === 4001 ? 'Connection rejected.' : 'Failed to connect MetaMask.');
     }
   };
 
-  // Freighter connection
-  const connectFreighter = async () => {
-    if (!isFreighterInstalled()) {
-      toast.error('Freighter is not installed. Please install Freighter extension.');
-      window.open('https://www.freighter.app/', '_blank');
-      return;
-    }
-
-    try {
-      // Request access to Freighter
-      const { publicKey } = await window.freighter.getPublicKey({
-        network: network === 'mainnet' ? 'PUBLIC' : 'TESTNET'
-      });
-      
-      setWalletAddress(publicKey);
-      setWalletType('freighter');
-      setIsConnected(true);
-      toast.success('Freighter connected successfully!');
-          } catch (error: any) {
-      console.error('Freighter connection error:', error);
-      if (error.message?.includes('User declined access')) {
-        toast.error('Connection rejected by user');
-      } else {
-        toast.error('Failed to connect Freighter wallet');
-      }
-    }
-  };
-
-  // Switch Ethereum network
   const switchEthereumNetwork = async (chainId: string) => {
+    if (!isMetaMaskInstalled()) return;
     try {
-      await window.ethereum.request({
+      await window.ethereum!.request({
         method: 'wallet_switchEthereumChain',
         params: [{ chainId }],
       });
-    } catch (error: any) {
-      if (error.code === 4001) {
-        // User rejected the network switch request
-        toast.error('Network switch rejected by user');
-        return;
-      }
-      
-      if (error.code === 4902) {
-        // Network not added to MetaMask
-        const networkConfig = getNetworkConfig(chainId);
-        if (networkConfig) {
-          try {
-            await window.ethereum.request({
-              method: 'wallet_addEthereumChain',
-              params: [networkConfig],
-            });
-          } catch (addError) {
-            console.error('Failed to add network:', addError);
-            if (addError.code === 4001) {
-              toast.error('Network addition rejected by user');
-            } else {
-              toast.error('Failed to add network to MetaMask');
-            }
-          }
-        }
-      } else {
-        console.error('Failed to switch network:', error);
-        toast.error('Failed to switch network');
-      }
+    } catch (err: any) {
+      // Handle common errors like chain not added
+      console.error("Failed to switch network", err);
+      toast.error("Failed to switch network.");
     }
   };
 
-  // Get network configuration
-  const getNetworkConfig = (chainId: string) => {
-    const configs: Record<string, any> = {
-      '0x1': {
-        chainId: '0x1',
-        chainName: 'Ethereum Mainnet',
-        nativeCurrency: { name: 'Ethereum', symbol: 'ETH', decimals: 18 },
-        rpcUrls: ['https://mainnet.infura.io/v3/'],
-        blockExplorerUrls: ['https://etherscan.io/'],
-      },
-      '0x5': {
-        chainId: '0x5',
-        chainName: 'Goerli Testnet',
-        nativeCurrency: { name: 'Goerli Ether', symbol: 'ETH', decimals: 18 },
-        rpcUrls: ['https://goerli.infura.io/v3/'],
-        blockExplorerUrls: ['https://goerli.etherscan.io/'],
-      },
-    };
-    return configs[chainId];
+  const disconnectMetaMask = () => {
+    setEthWallet({ address: null, isConnected: false, chainId: null });
+    localStorage.removeItem('eth_wallet_connected');
+    toast.success('MetaMask disconnected.');
   };
 
-  // Main connect function
-  const connectWallet = async (type: 'freighter' | 'metamask') => {
-    setIsConnecting(true);
+  // --- Stellar Logic ---
+  const connectFreighter = async () => {
+    if (!isFreighterInstalled()) {
+      toast.error('Freighter is not installed.');
+      window.open('https://www.freighter.app/', '_blank');
+      return;
+    }
     try {
-      if (type === 'metamask') {
-        await connectMetaMask();
-      } else {
-        await connectFreighter();
-      }
-    } catch (error) {
-      console.error('Wallet connection error:', error);
-    } finally {
-      setIsConnecting(false);
+      await window.freighter!.requestAccess();
+      const publicKey = await window.freighter!.getPublicKey();
+      setStellarWallet({ address: publicKey, isConnected: true });
+      toast.success('Freighter connected!');
+    } catch (err: any) {
+      toast.error('Failed to connect Freighter.');
     }
   };
 
-  const disconnectWallet = () => {
-    setIsConnected(false);
-    setWalletAddress(null);
-    setWalletType(null);
-    setChainId(null);
-    toast.success('Wallet disconnected');
+  const disconnectFreighter = () => {
+    setStellarWallet({ address: null, isConnected: false });
+    localStorage.removeItem('stellar_wallet_connected');
+    toast.success('Freighter disconnected.');
   };
 
-  const switchNetwork = (newNetwork: 'testnet' | 'mainnet') => {
-    setNetwork(newNetwork);
-    
-    if (walletType === 'metamask' && isConnected) {
-      const expectedChainId = newNetwork === 'mainnet' ? '0x1' : '0x5';
-      switchEthereumNetwork(expectedChainId);
+  // --- Generic Handlers ---
+  const connectWallet = async (type: 'metamask' | 'freighter') => {
+    setIsConnecting(true);
+    if (type === 'metamask') {
+      await connectMetaMask();
+    } else {
+      await connectFreighter();
     }
-    
-    toast.success(`Switched to ${newNetwork}`);
+    setIsConnecting(false);
   };
-
-  // Listen for MetaMask events
+  
+  const disconnectWallet = (type: 'metamask' | 'freighter') => {
+    if (type === 'metamask') {
+      disconnectMetaMask();
+    } else {
+      disconnectFreighter();
+    }
+  };
+  
+  // --- Effects ---
+  // MetaMask event listeners
   useEffect(() => {
-    if (isMetaMaskInstalled()) {
-      const handleAccountsChanged = (accounts: string[]) => {
-        if (accounts.length === 0) {
-          disconnectWallet();
-        } else if (walletType === 'metamask') {
-          setWalletAddress(accounts[0]);
-        }
-      };
-
-      const handleChainChanged = (chainId: string) => {
-        setChainId(chainId);
-        // Optionally update network state based on chain ID
-        if (chainId === '0x1') {
-          setNetwork('mainnet');
-        } else if (chainId === '0x5') {
-          setNetwork('testnet');
-        }
-      };
-
-      const handleDisconnect = () => {
-        if (walletType === 'metamask') {
-          disconnectWallet();
-        }
-      };
-
-      window.ethereum?.on('accountsChanged', handleAccountsChanged);
-      window.ethereum?.on('chainChanged', handleChainChanged);
-      window.ethereum?.on('disconnect', handleDisconnect);
-
-      return () => {
-        window.ethereum?.removeListener('accountsChanged', handleAccountsChanged);
-        window.ethereum?.removeListener('chainChanged', handleChainChanged);
-        window.ethereum?.removeListener('disconnect', handleDisconnect);
-      };
-    }
-  }, [walletType]);
-
-  // Auto-connect if previously connected
-  useEffect(() => {
-    const savedWalletType = localStorage.getItem('wallet_type') as 'freighter' | 'metamask' | null;
-    const savedConnection = localStorage.getItem('wallet_connected');
-    
-    if (savedConnection === 'true' && savedWalletType) {
-      // Auto-connect logic here
-      if (savedWalletType === 'metamask' && isMetaMaskInstalled()) {
-        window.ethereum.request({ method: 'eth_accounts' })
-          .then((accounts: string[]) => {
-            if (accounts.length > 0) {
-              setWalletAddress(accounts[0]);
-              setWalletType('metamask');
-              setIsConnected(true);
-            }
-          })
-          .catch(console.error);
+    if (!isMetaMaskInstalled()) return;
+    const handleAccountsChanged = (accounts: string[]) => {
+      if (accounts.length === 0) {
+        disconnectMetaMask();
+      } else if (ethWallet.isConnected) {
+        setEthWallet(prev => ({ ...prev, address: accounts[0] }));
       }
+    };
+    const handleChainChanged = (chainId: string) => {
+      if (ethWallet.isConnected) {
+        setEthWallet(prev => ({ ...prev, chainId }));
+      }
+    };
+    window.ethereum!.on('accountsChanged', handleAccountsChanged);
+    window.ethereum!.on('chainChanged', handleChainChanged);
+    return () => {
+      window.ethereum!.removeListener('accountsChanged', handleAccountsChanged);
+      window.ethereum!.removeListener('chainChanged', handleChainChanged);
+    };
+  }, [ethWallet.isConnected]);
+
+  // Auto-connect from localStorage
+  useEffect(() => {
+    if (localStorage.getItem('eth_wallet_connected') === 'true' && isMetaMaskInstalled()) {
+      connectMetaMask();
+    }
+    if (localStorage.getItem('stellar_wallet_connected') === 'true' && isFreighterInstalled()) {
+      connectFreighter();
     }
   }, []);
 
-  // Save connection state
+  // Save connection state to localStorage
   useEffect(() => {
-    localStorage.setItem('wallet_connected', isConnected.toString());
-    if (walletType) {
-      localStorage.setItem('wallet_type', walletType);
-    } else {
-      localStorage.removeItem('wallet_type');
-    }
-  }, [isConnected, walletType]);
+    localStorage.setItem('eth_wallet_connected', String(ethWallet.isConnected));
+  }, [ethWallet.isConnected]);
 
+  useEffect(() => {
+    localStorage.setItem('stellar_wallet_connected', String(stellarWallet.isConnected));
+  }, [stellarWallet.isConnected]);
+
+  // --- Mock Functions (to be replaced) ---
+  const supplyTokens = async (amount: number) => `mock_tx_supply_${amount}`;
+  const borrowTokens = async (amount: number) => `mock_tx_borrow_${amount}`;
+  const repayTokens = async (amount: number) => `mock_tx_repay_${amount}`;
+  const withdrawTokens = async (amount: number) => `mock_tx_withdraw_${amount}`;
+  const refreshAccountInfo = async () => {};
+  const getBalance = async (assetType?: string) => Math.random() * 100;
+  
   const value: WalletContextType = {
-    isConnected,
-    walletAddress,
-    walletType,
-    network,
+    ethWallet,
+    stellarWallet,
     isConnecting,
     connectWallet,
     disconnectWallet,
-    switchNetwork,
-    chainId,
+    switchEthereumNetwork,
+    transactions,
+    accountInfo,
+    supplyTokens,
+    borrowTokens,
+    repayTokens,
+    withdrawTokens,
+    refreshAccountInfo,
+    getBalance,
   };
 
   return (

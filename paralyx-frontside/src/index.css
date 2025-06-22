@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-paralyx-accent/20;
+  }
+
+  body {
+    @apply font-body text-paralyx-text bg-paralyx-gradient min-h-screen;
+    font-feature-settings: "liga" 1;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-title;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-glass-light backdrop-blur-xl border border-white/30 rounded-xl shadow-2xl;
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8),
+      0 0 0 1px rgba(255, 255, 255, 0.3);
+  }
+
+  .glass-button {
+    @apply bg-glass-medium hover:bg-glass-light backdrop-blur-sm border border-white/30 rounded-lg transition-all duration-200 hover:shadow-lg;
+  }
+
+  .paralyx-button {
+    @apply bg-paralyx-primary hover:bg-paralyx-primary/80 text-paralyx-text font-medium px-6 py-3 rounded-lg transition-all duration-200 hover:shadow-lg hover:scale-105;
+  }
+
+  .health-safe {
+    @apply text-paralyx-safe border-paralyx-safe/30 bg-paralyx-safe/10;
+  }
+
+  .health-warning {
+    @apply text-paralyx-warning border-paralyx-warning/30 bg-paralyx-warning/10;
+  }
+
+  .metric-card {
+    @apply glass-card p-6 hover:bg-glass-medium transition-all duration-300 hover:scale-105;
+  }
+
+  .input-field {
+    @apply bg-glass-dark backdrop-blur-sm border border-white/20 rounded-lg px-4 py-3 text-paralyx-text placeholder-paralyx-text/50 focus:border-paralyx-primary focus:outline-none focus:ring-2 focus:ring-paralyx-primary/20;
+  }
+}
+
+@layer utilities {
+  .text-shadow {
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  .glow-effect {
+    filter: drop-shadow(0 0 10px rgba(255, 182, 193, 0.3));
+  }
+
+  .green-stroke {
+    -webkit-text-stroke: 1px #22c55e;
+    text-stroke: 1px #22c55e;
+  }
+
+  .green-stroke-thick {
+    -webkit-text-stroke: 2px #22c55e;
+    text-stroke: 2px #22c55e;
+  }
+
+  .green-glow {
+    filter: drop-shadow(0 0 8px rgba(34, 197, 94, 0.6));
+  }
+
+  .green-border-glow {
+    box-shadow: 0 0 10px rgba(34, 197, 94, 0.4),
+      inset 0 0 10px rgba(34, 197, 94, 0.1);
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 182, 193, 0.6);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 182, 193, 0.8);
+}

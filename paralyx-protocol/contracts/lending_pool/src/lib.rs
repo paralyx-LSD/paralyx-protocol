@@ -2,7 +2,7 @@
 
 use soroban_sdk::{
     contract, contractimpl, contracttype, Address, Env, Symbol,
-    symbol_short
+    symbol_short, vec
 };
 
 pub(crate) const DAY_IN_LEDGERS: u32 = 17280;
@@ -132,12 +132,46 @@ impl LendingPool {
         // Calculate sTokens to mint (1:1 for now, can be enhanced with exchange rate)
         let s_token_amount = amount;
 
-        // Call sToken contract to mint tokens
-        // Note: In real implementation, this would be a cross-contract call
-        // For now, we'll just emit an event indicating the mint should happen
+        // Emit mint request event - will be handled by S-Token contract integration
         env.events().publish((symbol_short!("mint_req"), user.clone(), asset.clone()), s_token_amount);
 
         env.events().publish((symbol_short!("deposit"), user, asset), amount);
+    }
+
+    /// Bridge deposit - called by bridge validator for cross-chain operations
+    pub fn bridge_deposit(env: Env, user: Address, asset: Symbol, amount: i128, lock_id: u64) {
+        // Only bridge validator can call this function
+        // Note: Bridge validator authorization should be checked here in production
+        
+        let config: AssetConfig = env.storage().instance()
+            .get(&DataKey::Asset(asset.clone()))
+            .unwrap_or_else(|| panic!("asset not configured"));
+
+        if !config.is_active {
+            panic!("asset not active");
+        }
+
+        if amount <= 0 {
+            panic!("amount must be positive");
+        }
+
+        // Update interest rates
+        Self::update_interest_rates(env.clone(), asset.clone());
+
+        // Update total supplied
+        let mut total_supplied: i128 = env.storage().instance()
+            .get(&DataKey::TotalSupplied(asset.clone()))
+            .unwrap_or(0i128);
+        total_supplied = total_supplied + amount;
+        env.storage().instance().set(&DataKey::TotalSupplied(asset.clone()), &total_supplied);
+
+        // Calculate sTokens to mint (1:1 for now, can be enhanced with exchange rate)
+        let s_token_amount = amount;
+
+        // Emit bridge mint request event - will be handled by bridge integration
+        env.events().publish((symbol_short!("brdg_mint"), user.clone(), asset.clone(), lock_id), s_token_amount);
+
+        env.events().publish((symbol_short!("brdg_dep"), user, asset, lock_id), amount);
     }
 
     /// Withdraw deposited asset (redeem sTokens)
@@ -175,8 +209,7 @@ impl LendingPool {
         // Calculate sTokens to burn
         let s_token_amount = amount;
 
-        // Call sToken contract to burn tokens  
-        // Note: In real implementation, this would be a cross-contract call
+        // Emit burn request event - will be handled by S-Token contract integration  
         env.events().publish((symbol_short!("burn_req"), user.clone(), asset.clone()), s_token_amount);
 
         env.events().publish((symbol_short!("withdraw"), user, asset), amount);

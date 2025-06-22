@@ -14,6 +14,7 @@ pub(crate) const INSTANCE_LIFETIME_THRESHOLD: u32 = INSTANCE_BUMP_AMOUNT - DAY_I
 pub enum DataKey {
     Admin,
     LendingPool,
+    BridgeValidator,
     UnderlyingAsset,
     Name,
     Symbol,
@@ -33,6 +34,7 @@ impl SToken {
         env: Env,
         admin: Address,
         lending_pool: Address,
+        bridge_validator: Address,
         underlying_asset: Address,
         name: String,
         symbol: String,
@@ -44,6 +46,7 @@ impl SToken {
 
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::LendingPool, &lending_pool);
+        env.storage().instance().set(&DataKey::BridgeValidator, &bridge_validator);
         env.storage().instance().set(&DataKey::UnderlyingAsset, &underlying_asset);
         env.storage().instance().set(&DataKey::Name, &name);
         env.storage().instance().set(&DataKey::Symbol, &symbol);
@@ -67,6 +70,23 @@ impl SToken {
         env.storage().instance().set(&DataKey::Balance(to.clone()), &balance);
 
         env.events().publish((symbol_short!("mint"), to.clone()), amount);
+    }
+
+    /// Bridge mint function - called by bridge validator for cross-chain operations
+    pub fn bridge_mint(env: Env, to: Address, amount: i128, lock_id: u64) {
+        let bridge_validator: Address = env.storage().instance().get(&DataKey::BridgeValidator).unwrap();
+        bridge_validator.require_auth();
+
+        let mut total_supply: i128 = env.storage().instance().get(&DataKey::TotalSupply).unwrap_or(0i128);
+        let mut balance: i128 = env.storage().instance().get(&DataKey::Balance(to.clone())).unwrap_or(0i128);
+
+        total_supply = total_supply + amount;
+        balance = balance + amount;
+
+        env.storage().instance().set(&DataKey::TotalSupply, &total_supply);
+        env.storage().instance().set(&DataKey::Balance(to.clone()), &balance);
+
+        env.events().publish((symbol_short!("brdg_mint"), to.clone(), lock_id), amount);
     }
 
     /// Burn sTokens from a user (called by lending pool)
@@ -144,6 +164,20 @@ impl SToken {
     pub fn underlying_to_s_token(env: Env, underlying_amount: i128) -> i128 {
         let rate = Self::exchange_rate(env.clone());
         underlying_amount * 10_000_000i128 / rate
+    }
+
+    /// Set bridge validator (admin only)
+    pub fn set_bridge_validator(env: Env, new_bridge_validator: Address) {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        env.storage().instance().set(&DataKey::BridgeValidator, &new_bridge_validator);
+        env.events().publish((symbol_short!("brdg_set"),), new_bridge_validator);
+    }
+
+    /// Get bridge validator address
+    pub fn get_bridge_validator(env: Env) -> Address {
+        env.storage().instance().get(&DataKey::BridgeValidator).unwrap()
     }
 }
 

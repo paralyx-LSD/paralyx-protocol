@@ -59,10 +59,10 @@ api.interceptors.response.use(
 export const getProtocolOverview = async () => {
   const response = await api.get('/api/protocol/overview');
   return {
-    tvl: response.data.liquidity.totalValueLocked,
-    totalBorrowed: response.data.liquidity.totalBorrowed,
-    utilizationRate: response.data.liquidity.utilizationPercentage,
-    healthScore: Math.round((100 - response.data.liquidity.utilizationPercentage) * 0.95), // Calculated health score
+    tvl: response.data.liquidity.totalValueLocked || 0,
+    totalBorrowed: response.data.liquidity.totalBorrowed || 0,
+    utilizationRate: response.data.liquidity.utilizationPercentage || 0,
+    healthScore: Math.round((100 - (response.data.liquidity.utilizationPercentage || 0)) * 0.95), // Calculated health score
     activeUsers: response.data.markets[0]?.totalSupply || 0 // Approximate active users
   };
 };
@@ -90,19 +90,30 @@ export const getProtocolStats = async () => {
 // Market API calls
 export const getMarkets = async () => {
   const response = await api.get('/api/markets');
-  return response.data.markets.map((market: any) => ({
-    id: market.id,
-    name: market.name,
-    asset: market.asset,
-    supplyAPY: market.supplyAPY,
-    borrowAPY: market.borrowAPY,
-    totalSupply: market.totalSupply,
-    totalBorrow: market.totalBorrows,
-    utilizationRate: market.utilizationPercentage,
-    collateralFactor: market.collateralFactor,
-    liquidationThreshold: market.liquidationThreshold,
-    isActive: market.isActive
-  }));
+  const { rates, prices } = response.data;
+  
+  // Transform the rates object into an array of market objects
+  const assets = ['XLM', 'stETH', 'USDC'];
+  return assets.map((asset, index) => {
+    const rateData = rates.rates[asset];
+    const price = prices.prices[asset];
+    
+    return {
+      id: asset.toLowerCase(),
+      name: asset === 'stETH' ? 'Lido Staked ETH' : asset === 'XLM' ? 'Stellar Lumens' : 'USD Coin',
+      asset: asset,
+      supplyAPY: rateData.supplyAPY,
+      borrowAPY: rateData.borrowAPY,
+      totalSupply: rateData.totalSupplied,
+      totalBorrow: rateData.totalBorrowed,
+      utilizationRate: rateData.utilizationRate,
+      collateralFactor: asset === 'XLM' ? 0.75 : asset === 'stETH' ? 0.8 : 0.85, // Default collateral factors
+      liquidationThreshold: asset === 'XLM' ? 0.8 : asset === 'stETH' ? 0.85 : 0.9, // Default liquidation thresholds
+      isActive: true,
+      price: price / 10000000, // Convert from Stellar stroop format
+      availableLiquidity: rateData.availableLiquidity
+    };
+  });
 };
 
 export const getMarketDetails = async (marketId: string) => {

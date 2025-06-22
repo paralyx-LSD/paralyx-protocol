@@ -25,28 +25,66 @@ const { validateApiKey } = require('./middleware/auth');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Security middleware
-app.use(helmet());
-app.use(compression());
-
-// CORS configuration
+// CORS configuration FIRST - before any other middleware
 const corsOptions = {
-  origin: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : ['http://localhost:3000'],
+  origin: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:5174'
+  ],
   credentials: true,
   optionsSuccessStatus: 200
 };
 app.use(cors(corsOptions));
 
-// Rate limiting
+// Manual CORS headers as fallback
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  const allowedOrigins = [
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://127.0.0.1:5173',
+    'http://127.0.0.1:5174'
+  ];
+  
+  if (allowedOrigins.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+  }
+  
+  res.setHeader('Access-Control-Allow-Credentials', true);
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-API-Key');
+  
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+  
+  next();
+});
+
+// Security middleware - configure helmet to allow CORS
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginOpenerPolicy: false
+}));
+app.use(compression());
+
+// Rate limiting - more generous for development
 const limiter = rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 500, // Increased from 100 to 500
   message: {
     error: 'Too many requests from this IP, please try again later.',
     retryAfter: Math.ceil((parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000) / 1000)
   },
   standardHeaders: true,
   legacyHeaders: false,
+  // Skip rate limiting for health checks
+  skip: (req) => req.path === '/health'
 });
 app.use('/api/', limiter);
 
@@ -129,23 +167,31 @@ app.use('*', (req, res) => {
 // Error handling middleware
 app.use(errorHandler);
 
+// Global server reference for graceful shutdown
+let server;
+
 // Graceful shutdown handler
 const gracefulShutdown = () => {
   logger.info('Received shutdown signal, closing server gracefully...');
   
-  server.close(() => {
-    logger.info('HTTP server closed');
-    
-    // Close Redis connection
-    if (global.redisClient) {
-      global.redisClient.quit(() => {
-        logger.info('Redis connection closed');
+  if (server) {
+    server.close(() => {
+      logger.info('HTTP server closed');
+      
+      // Close Redis connection
+      if (global.redisClient) {
+        global.redisClient.quit(() => {
+          logger.info('Redis connection closed');
+          process.exit(0);
+        });
+      } else {
         process.exit(0);
-      });
-    } else {
-      process.exit(0);
-    }
-  });
+      }
+    });
+  } else {
+    logger.info('No server instance to close');
+    process.exit(0);
+  }
   
   // Force close after 10 seconds
   setTimeout(() => {
@@ -166,7 +212,7 @@ async function startServer() {
     logger.info('Background scheduler initialized');
     
     // Start HTTP server
-    const server = app.listen(PORT, () => {
+    server = app.listen(PORT, () => {
       logger.info(`Paralyx API server started on port ${PORT}`);
       logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
       logger.info(`Documentation available at: http://localhost:${PORT}/docs`);

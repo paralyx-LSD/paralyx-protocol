@@ -25,9 +25,10 @@ router.get('/',
         stellarService.getAssetPrices()
       ]);
       
-      const totalSupply = stats.totalSupply / 1000000;
-      const totalDebt = stats.totalDebt / 1000000;
-      const utilizationRate = stats.utilizationRate / 1000000;
+      // Calculate market metrics from protocol stats
+      const totalSupply = Number(stats.totalSupply) / 1000000; // Convert BigInt to Number
+      const totalDebt = Number(stats.totalDebt) / 1000000;
+      const utilizationRate = Number(stats.utilizationRate) / 1000000;
       
       const markets = [
         {
@@ -132,10 +133,11 @@ router.get('/:marketId',
         stellarService.getAssetPrices()
       ]);
       
-      const totalSupply = stats.totalSupply / 1000000;
-      const totalDebt = stats.totalDebt / 1000000;
-      const utilizationRate = stats.utilizationRate / 1000000;
-      const exchangeRate = stats.exchangeRate / 1000000;
+      // Calculate market metrics from protocol stats
+      const totalSupply = Number(stats.totalSupply) / 1000000; // Convert BigInt to Number
+      const totalDebt = Number(stats.totalDebt) / 1000000;
+      const utilizationRate = Number(stats.utilizationRate) / 1000000;
+      const exchangeRate = Number(stats.exchangeRate) / 1000000;
       
       const market = {
         id: marketId,
@@ -148,7 +150,7 @@ router.get('/:marketId',
         supply: {
           totalSupply: totalSupply,
           apy: rates.supplyAPY,
-          rate: rates.supplyRate / 1000000,
+          rate: Number(rates.supplyRate) / 1000000,
           exchangeRate: exchangeRate,
           suppliers: 0 // TODO: Get from contract
         },
@@ -156,7 +158,7 @@ router.get('/:marketId',
         borrow: {
           totalBorrows: totalDebt,
           apy: rates.borrowAPY,
-          rate: rates.borrowRate / 1000000,
+          rate: Number(rates.borrowRate) / 1000000,
           borrowers: 0 // TODO: Get from contract
         },
         

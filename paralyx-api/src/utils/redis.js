@@ -97,7 +97,14 @@ const cache = {
       const start = Date.now();
       const ttl = ttlSeconds || parseInt(process.env.DEFAULT_CACHE_TTL) || 300;
       
-      const serialized = JSON.stringify(value);
+      // Custom replacer function to handle BigInt serialization
+      const serialized = JSON.stringify(value, (key, val) => {
+        if (typeof val === 'bigint') {
+          return val.toString();
+        }
+        return val;
+      });
+      
       await redisClient.setEx(key, ttl, serialized);
       
       const duration = Date.now() - start;
@@ -212,7 +219,15 @@ const cacheMiddleware = (ttlSeconds = 300, keyGenerator = null) => {
       res.json = function(data) {
         // Cache successful responses only
         if (res.statusCode >= 200 && res.statusCode < 300) {
-          cache.set(cacheKey, data, ttlSeconds).catch(err => 
+          // Use the same BigInt serialization fix for middleware caching
+          const serializableData = JSON.parse(JSON.stringify(data, (key, val) => {
+            if (typeof val === 'bigint') {
+              return val.toString();
+            }
+            return val;
+          }));
+          
+          cache.set(cacheKey, serializableData, ttlSeconds).catch(err => 
             logger.error('Cache middleware set error:', err)
           );
         }

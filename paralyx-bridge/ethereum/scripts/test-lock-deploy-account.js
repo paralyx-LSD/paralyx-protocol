@@ -5,7 +5,7 @@ async function main() {
     console.log("Testing WETH Lock with Deploy Account...\n");
 
     // Contract details - Latest deployment: 2025-06-20T23:11:50.849Z
-    const CONTRACT_ADDRESS = "0xcB0260dc37eb2577D1fF538690296c49823F25B8";
+    const CONTRACT_ADDRESS = "0x6164187652d6c123eB124e0b8b08ee42A10A7d86";
     const WETH_ADDRESS = "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14";
     const STELLAR_ADDRESS = "GB5NWPRQZ5BP7L73O4OWH3WBBM3FH2KAPCZACRSDPPJFPXYFE6GFC4PN";
     

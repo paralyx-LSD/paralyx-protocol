@@ -90,6 +90,38 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     network: 'TESTNET',
   });
 
+  // Additional state for WalletModal
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [network, setNetwork] = useState<'testnet' | 'mainnet'>('testnet');
+
+  // Generic connectWallet function for WalletModal
+  const connectWallet = async (type: 'freighter' | 'metamask') => {
+    setIsConnecting(true);
+    try {
+      if (type === 'metamask') {
+        await connectEthWallet();
+      } else if (type === 'freighter') {
+        await connectStellarWallet();
+      }
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
+  // Network switching function
+  const switchNetwork = (newNetwork: 'testnet' | 'mainnet') => {
+    setNetwork(newNetwork);
+    // Update Stellar wallet network
+    setStellarWallet(prev => ({
+      ...prev,
+      network: newNetwork === 'testnet' ? 'TESTNET' : 'MAINNET'
+    }));
+  };
+
+  // Backward compatibility computed values
+  const isConnected = ethWallet.isConnected || stellarWallet.isConnected;
+  const walletAddress = ethWallet.address || stellarWallet.address;
+
   // Load persisted wallet connections on mount
   useEffect(() => {
     const ethConnected = localStorage.getItem('ethWalletConnected') === 'true';
@@ -324,16 +356,12 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     getTokenBalance,
     getAssetPrice,
     switchToSepolia,
-    connectWallet: async (type: 'freighter' | 'metamask') => {
-      // Implementation needed
-    },
-    isConnecting: false,
-    network: 'testnet',
-    switchNetwork: (network: 'testnet' | 'mainnet') => {
-      // Implementation needed
-    },
-    isConnected: false,
-    walletAddress: null,
+    connectWallet,
+    isConnecting,
+    network,
+    switchNetwork,
+    isConnected,
+    walletAddress,
   };
 
   return (

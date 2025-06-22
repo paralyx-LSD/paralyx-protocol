@@ -249,32 +249,58 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   // Stellar wallet functions
   const connectStellarWallet = async () => {
     try {
+      console.log(' Starting Stellar wallet connection...');
+      
       if (!window.freighter) {
-        throw new Error('Freighter wallet not found');
+        throw new Error('Freighter wallet not found. Please install Freighter extension.');
       }
+
+      console.log(' Freighter extension detected');
 
       // Check if Freighter is available and request access
       const isConnected = await window.freighter.isConnected();
+      console.log(' Freighter connection status:', isConnected);
+      
       if (!isConnected) {
+        console.log(' Requesting Freighter access...');
         await window.freighter.requestAccess();
       }
 
-      // Get public key
+      // Get public key for testnet
+      console.log(' Getting public key from Freighter...');
       const { publicKey } = await window.freighter.getPublicKey({ 
         network: 'TESTNET' 
       });
+      
+      if (!publicKey) {
+        throw new Error('Failed to get public key from Freighter');
+      }
+
+      console.log(' Stellar public key obtained:', publicKey);
+
+      // Fetch Stellar balance (XLM)
+      let balance = 0;
+      try {
+        console.log('💰 Fetching XLM balance...');
+        balance = await stellar.getTokenBalance(publicKey, 'XLM');
+        console.log('💰 XLM balance:', balance);
+      } catch (balanceError) {
+        console.warn('⚠️ Could not fetch balance:', balanceError);
+        // Continue with 0 balance - balance fetch is not critical for connection
+      }
 
       setStellarWallet({
         isConnected: true,
         address: publicKey,
-        balance: 0, // We'll fetch this separately
+        balance: balance,
         network: 'TESTNET',
       });
 
       localStorage.setItem('stellarWalletConnected', 'true');
+      console.log('✅ Successfully connected to Stellar wallet:', publicKey);
     } catch (error: any) {
-      console.error('Error connecting Stellar wallet:', error);
-      throw error;
+      console.error('❌ Error connecting Stellar wallet:', error);
+      throw new Error(`Failed to connect to Freighter: ${error.message}`);
     }
   };
 

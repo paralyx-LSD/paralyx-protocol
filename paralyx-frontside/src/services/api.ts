@@ -34,13 +34,23 @@ api.interceptors.response.use(
   },
   (error: AxiosError) => {
     console.error('API Response Error:', error.response?.data || error.message);
-    if (error.response?.status === 404) {
+    
+    // Handle specific error cases
+    if (error.code === 'ERR_NETWORK' || error.code === 'ECONNREFUSED') {
+      console.error('Backend connection failed. Please ensure API server is running on localhost:3001');
+      throw new Error('Cannot connect to API server - please check if the backend is running on localhost:3001');
+    } else if (error.response?.status === 404) {
       throw new Error('API endpoint not found');
     } else if (error.response?.status === 500) {
       throw new Error('Server error - please try again later');
-    } else if (error.code === 'ECONNREFUSED') {
-      throw new Error('Cannot connect to API server - please check if the backend is running');
+    } else if (error.response?.status === 400) {
+      const errorData = error.response.data as any;
+      throw new Error(errorData?.message || 'Bad request');
+    } else if (!error.response) {
+      // Network errors, CORS, etc.
+      throw new Error('Network error - please check your connection and try again');
     }
+    
     throw error;
   }
 );

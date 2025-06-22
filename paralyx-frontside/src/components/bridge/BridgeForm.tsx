@@ -146,7 +146,7 @@ const BridgeForm: React.FC = () => {
 
       // Approve the lockbox to spend the tokens
       const allowance = await tokenContract.allowance(walletAddress, LSD_LOCKBOX_ADDRESS);
-      if (allowance.lt(amountWei)) {
+      if (allowance < amountWei) {
         setBridgeStep("approving");
         const approveTx = await tokenContract.approve(LSD_LOCKBOX_ADDRESS, amountWei);
         await approveTx.wait();

@@ -85,8 +85,50 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
 
       // Fetch user data if connected
       if (isConnected && walletAddress) {
-        const userResponse = await api.getUserPosition(walletAddress);
-        setUserPosition(userResponse);
+        try {
+          const userResponse = await api.getUserPosition(walletAddress);
+          
+          // Transform API response to UserPosition format
+          if (userResponse.position && userResponse.position.hasPosition) {
+            const position = userResponse.position;
+            setUserPosition({
+              totalSupplied: position.totalCollateralUsd || 0,
+              totalBorrowed: position.totalDebtUsd || 0,
+              netAPY: 4.5, // Would need to calculate from market rates
+              healthFactor: position.healthFactor || 0,
+              liquidationRisk: position.healthStatus === 'safe' ? 'low' : 
+                             position.ltv > 80 ? 'high' : 'medium',
+              positions: [{
+                market: 'WETH',
+                supplied: position.sTokenBalance || 0,
+                borrowed: position.totalDebtUsd || 0,
+                suppliedUSD: position.totalCollateralUsd || 0,
+                borrowedUSD: position.totalDebtUsd || 0,
+              }]
+            });
+          } else {
+            // No position - return empty state
+            setUserPosition({
+              totalSupplied: 0,
+              totalBorrowed: 0,
+              netAPY: 0,
+              healthFactor: 0,
+              liquidationRisk: 'low',
+              positions: []
+            });
+          }
+        } catch (userError) {
+          console.error('Error fetching user position:', userError);
+          // Set empty position on error
+          setUserPosition({
+            totalSupplied: 0,
+            totalBorrowed: 0,
+            netAPY: 0,
+            healthFactor: 0,
+            liquidationRisk: 'low',
+            positions: []
+          });
+        }
       } else {
         setUserPosition(null);
       }

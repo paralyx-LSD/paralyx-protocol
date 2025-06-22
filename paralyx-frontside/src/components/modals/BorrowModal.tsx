@@ -37,27 +37,57 @@ const BorrowModal: React.FC<BorrowModalProps> = ({
   onClose,
   market,
 }) => {
-  const { isConnected, walletAddress } = useWallet();
+  const { isConnected, walletAddress, borrowTokens, getTokenBalance, getAccountInfo, getAssetPrice } = useWallet();
   const [amount, setAmount] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [borrowingPower, setBorrowingPower] = useState(0);
+  const [currentDebt, setCurrentDebt] = useState(0);
+  const [assetPrice, setAssetPrice] = useState(1);
+  const [userCollateral, setUserCollateral] = useState(0);
+  const [healthFactor, setHealthFactor] = useState(0);
 
-  // Mock user data - in real app, fetch from API
-  const userCollateral = 15847; // USD value
-  const currentBorrowed = 8395; // USD value
-  const healthFactor = 2.34;
-  const borrowLimit = userCollateral * 0.8; // 80% of collateral
-  const availableToBorrow = borrowLimit - currentBorrowed;
+  // Fetch real user account info on component mount
+  React.useEffect(() => {
+    const fetchAccountInfo = async () => {
+      if (isConnected && walletAddress) {
+        try {
+          const accountInfo = await getAccountInfo();
+          setUserCollateral(accountInfo.totalSupplied);
+          setCurrentDebt(accountInfo.totalBorrowed);
+          setHealthFactor(accountInfo.healthFactor);
+          setBorrowingPower(accountInfo.totalSupplied * market.collateralFactor);
+          
+          // Fetch asset price from oracle
+          try {
+            const price = await getAssetPrice(market.asset);
+            setAssetPrice(price);
+          } catch (priceError) {
+            console.warn('Could not fetch asset price:', priceError);
+            // Fallback prices
+            const fallbackPrices: Record<string, number> = {
+              ETH: 2000,
+              WETH: 2000,
+              USDC: 1,
+              STETH: 1980,
+              WSTETH: 2100,
+            };
+            setAssetPrice(fallbackPrices[market.asset] || 1);
+          }
+        } catch (error) {
+          console.error('Error fetching account info:', error);
+          setBorrowingPower(0);
+          setCurrentDebt(0);
+          setUserCollateral(0);
+          setHealthFactor(0);
+        }
+      }
+    };
+    
+    fetchAccountInfo();
+  }, [isConnected, walletAddress, getAccountInfo, market.asset, market.collateralFactor]);
 
-  // Mock asset price - in real app, fetch from price oracle
-  const assetPrice =
-    {
-      ETH: 2000,
-      USDC: 1,
-      WETH: 2000,
-      STETH: 1980,
-      WSTETH: 2100,
-    }[market.asset] || 1;
-
+  const borrowLimit = borrowingPower;
+  const availableToBorrow = Math.max(0, borrowLimit - currentDebt);
   const maxBorrowAmount = availableToBorrow / assetPrice;
 
   const handleBorrow = async () => {
@@ -71,22 +101,29 @@ const BorrowModal: React.FC<BorrowModalProps> = ({
       return;
     }
 
-    if (parseFloat(amount) > maxBorrowAmount) {
-      toast.error("Amount exceeds borrow limit");
+    const borrowAmount = parseFloat(amount);
+    if (borrowAmount > availableToBorrow) {
+      toast.error("Amount exceeds borrowing capacity");
       return;
     }
 
     setIsProcessing(true);
 
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      toast.success(`Successfully borrowed ${amount} ${market.asset}`);
+      // Real Stellar contract interaction
+      const txHash = await borrowTokens(borrowAmount, market.asset);
+      
+      toast.success(`Successfully borrowed ${amount} ${market.asset}. Tx: ${txHash.slice(0, 8)}...`);
       onClose();
       setAmount("");
-    } catch (error) {
-      toast.error("Borrow failed. Please try again.");
+      
+      // Refresh account info after successful borrow
+      const accountInfo = await getAccountInfo();
+      setBorrowingPower(accountInfo.totalSupplied * market.collateralFactor);
+      setCurrentDebt(accountInfo.totalBorrowed);
+    } catch (error: any) {
+      console.error('Borrow error:', error);
+      toast.error(error.message || "Borrow failed. Please try again.");
     } finally {
       setIsProcessing(false);
     }
@@ -97,7 +134,7 @@ const BorrowModal: React.FC<BorrowModalProps> = ({
   };
 
   const borrowValue = parseFloat(amount || "0") * assetPrice;
-  const newHealthFactor = userCollateral / (currentBorrowed + borrowValue + 1);
+  const newHealthFactor = userCollateral / (currentDebt + borrowValue + 1);
   const dailyInterest =
     (parseFloat(amount || "0") * (market.borrowAPY / 100)) / 365;
 
@@ -178,22 +215,22 @@ const BorrowModal: React.FC<BorrowModalProps> = ({
                   Borrow Capacity
                 </span>
                 <span className="text-sm font-title font-medium text-paralyx-text">
-                  ${(currentBorrowed + borrowValue).toFixed(0)} / $
+                  ${(currentDebt + borrowValue).toFixed(0)} / $
                   {borrowLimit.toFixed(0)}
                 </span>
               </div>
               <div className="w-full bg-white/10 rounded-full h-2">
                 <div
                   className={`h-2 rounded-full transition-all duration-300 ${
-                    (currentBorrowed + borrowValue) / borrowLimit > 0.8
+                    (currentDebt + borrowValue) / borrowLimit > 0.8
                       ? "bg-paralyx-warning"
-                      : (currentBorrowed + borrowValue) / borrowLimit > 0.6
+                      : (currentDebt + borrowValue) / borrowLimit > 0.6
                       ? "bg-yellow-500"
                       : "bg-paralyx-primary"
                   }`}
                   style={{
                     width: `${Math.min(
-                      ((currentBorrowed + borrowValue) / borrowLimit) * 100,
+                      ((currentDebt + borrowValue) / borrowLimit) * 100,
                       100
                     )}%`,
                   }}

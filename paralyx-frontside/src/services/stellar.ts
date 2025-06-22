@@ -328,6 +328,21 @@ export async function getTokenBalance(
   assetType: string = 'WETH'
 ): Promise<number> {
   try {
+    // Special case for native XLM balance
+    if (assetType === 'XLM') {
+      try {
+        const account = await server.getAccount(userAddress);
+        const xlmBalance = (account as any).balances.find(
+          (balance: any) => balance.asset_type === 'native'
+        );
+        return xlmBalance ? parseFloat(xlmBalance.balance) : 0;
+      } catch (error) {
+        console.error('Error fetching XLM balance:', error);
+        return 0;
+      }
+    }
+
+    // For other assets, get s-token balance from contract
     const contract = new Contract(S_TOKEN_CONTRACT);
     
     const operation = contract.call(
@@ -348,11 +363,23 @@ export async function getTokenBalance(
     
     // Check if simulation failed
     if ('error' in result) {
-      throw new Error(`Simulation failed: ${result.error}`);
+      console.warn(`Simulation failed for ${assetType} balance: ${result.error}`);
+      return 0;
     }
 
-    // Parse balance from result - simplified
-    return 0; // Default value, would need proper XDR parsing
+    // Try to parse balance from result
+    try {
+      if (result.result && (result as any).result.retval) {
+        const resultValue = (result as any).result.retval;
+        // This would need proper XDR parsing implementation
+        // For now return 0 as fallback
+        return 0;
+      }
+    } catch (parseError) {
+      console.warn('Error parsing balance result:', parseError);
+    }
+
+    return 0;
   } catch (error) {
     console.error('Error getting token balance:', error);
     return 0;

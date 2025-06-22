@@ -36,19 +36,27 @@ const SupplyModal: React.FC<SupplyModalProps> = ({
   onClose,
   market,
 }) => {
-  const { isConnected, walletAddress } = useWallet();
+  const { isConnected, walletAddress, supplyTokens, getTokenBalance, getAccountInfo } = useWallet();
   const [amount, setAmount] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [userBalance, setUserBalance] = useState(0);
 
-  // Mock user balance - in real app, fetch from API
-  const userBalance =
-    {
-      ETH: 12.847,
-      USDC: 8394.57,
-      WETH: 5.234,
-      STETH: 3.847,
-      WSTETH: 1.923,
-    }[market.asset] || 0;
+  // Fetch real user balance on component mount
+  React.useEffect(() => {
+    const fetchBalance = async () => {
+      if (isConnected && walletAddress) {
+        try {
+          const balance = await getTokenBalance(market.asset);
+          setUserBalance(balance);
+        } catch (error) {
+          console.error('Error fetching balance:', error);
+          setUserBalance(0);
+        }
+      }
+    };
+    
+    fetchBalance();
+  }, [isConnected, walletAddress, market.asset, getTokenBalance]);
 
   const handleSupply = async () => {
     if (!isConnected) {
@@ -69,14 +77,19 @@ const SupplyModal: React.FC<SupplyModalProps> = ({
     setIsProcessing(true);
 
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-
-      toast.success(`Successfully supplied ${amount} ${market.asset}`);
+      // Real Stellar contract interaction
+      const txHash = await supplyTokens(parseFloat(amount), market.asset);
+      
+      toast.success(`Successfully supplied ${amount} ${market.asset}. Tx: ${txHash.slice(0, 8)}...`);
       onClose();
       setAmount("");
-    } catch (error) {
-      toast.error("Supply failed. Please try again.");
+      
+      // Refresh balance after successful supply
+      const newBalance = await getTokenBalance(market.asset);
+      setUserBalance(newBalance);
+    } catch (error: any) {
+      console.error('Supply error:', error);
+      toast.error(error.message || "Supply failed. Please try again.");
     } finally {
       setIsProcessing(false);
     }

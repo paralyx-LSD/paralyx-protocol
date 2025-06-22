@@ -5,13 +5,13 @@ async function main() {
     console.log("⚙️ Setting up token support on LSDLockbox...\n");
 
     // Contract details - Latest deployment: 2025-06-20T23:11:50.849Z
-    const CONTRACT_ADDRESS = "0xcB0260dc37eb2577D1fF538690296c49823F25B8";
+    const CONTRACT_ADDRESS = "0xb8339d7F9F6b81413094AEaEBB75f41009d889bd";
     
     // Real Sepolia testnet token addresses
     const TOKEN_ADDRESSES = {
         STETH: "0x3e3FE7dBc6B4C189E7128855dD526361c49b40Af",   // Lido stETH
         WSTETH: "0xB82381A3fBD3FaFA77B3a7bE693342618240067b", // wstETH  
-        WETH: "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14"    // WETH
+        WETH: "0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9"    // WETH
     };
 
     try {

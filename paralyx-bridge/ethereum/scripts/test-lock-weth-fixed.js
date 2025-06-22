@@ -5,8 +5,8 @@ async function main() {
     console.log(" Testing WETH Lock on Paralyx Bridge (Fixed)...\n");
 
     // Contract details - Latest deployment: 2025-06-20T23:11:50.849Z
-    const CONTRACT_ADDRESS = "0xcB0260dc37eb2577D1fF538690296c49823F25B8";
-    const WETH_ADDRESS = "0xfFf9976782d46CC05630D1f6eBAb18b2324d6B14";
+    const CONTRACT_ADDRESS = "0xb8339d7F9F6b81413094AEaEBB75f41009d889bd";
+    const WETH_ADDRESS = "0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9";
     const STELLAR_ADDRESS = "GB5NWPRQZ5BP7L73O4OWH3WBBM3FH2KAPCZACRSDPPJFPXYFE6GFC4PN";
     
     // Test amount: 0.001 WETH (minimum allowed)

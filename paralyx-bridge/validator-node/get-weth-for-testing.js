@@ -1,8 +1,14 @@
 const { ethers } = require('ethers');
 
-// Configuration for Sepolia testnet
+// Configuration for Sepolia testnet - Fast and reliable RPC
 const config = {
-  rpcUrl: 'https://rpc.sepolia.org',
+  // Primary fast RPC (proven reliable)
+  primaryRpc: 'https://ethereum-sepolia-rpc.publicnode.com',
+  // Fallback RPCs
+  fallbackRpcs: [
+    'https://rpc.sepolia.org',
+    'https://sepolia.gateway.tenderly.co'
+  ],
   wethAddress: '0x7b79995e5f793a07bc00c21412e50ecae098e7f9',
   bridgeAddress: '0xb8339d7F9F6b81413094AEaEBB75f41009d889bd',
   userAddress: '0x176e6B69F1e08b0A1f75036C6d574Cc7cbb06f60'
@@ -22,97 +28,185 @@ const BRIDGE_ABI = [
   "function lockAsset(address token, uint256 amount, string memory stellarAddress) payable"
 ];
 
+// Cache for faster subsequent runs
+let cache = {
+  timestamp: 0,
+  data: null
+};
+
+const CACHE_DURATION = 30000; // 30 seconds
+
+// Fast provider instance
+let provider = null;
+
+async function getProvider() {
+  if (provider) return provider;
+  
+  console.log('🚀 Connecting to Sepolia RPC...');
+  
+  // Try primary RPC first
+  try {
+    provider = new ethers.JsonRpcProvider(config.primaryRpc);
+    // Quick test
+    await provider.getBlockNumber();
+    console.log('✅ Connected to primary RPC');
+    return provider;
+  } catch (error) {
+    console.log('⚠️  Primary RPC failed, trying fallbacks...');
+  }
+  
+  // Try fallback RPCs
+  for (let i = 0; i < config.fallbackRpcs.length; i++) {
+    try {
+      provider = new ethers.JsonRpcProvider(config.fallbackRpcs[i]);
+      await provider.getBlockNumber();
+      console.log(`✅ Connected to fallback RPC ${i + 1}`);
+      return provider;
+    } catch (error) {
+      console.log(`❌ Fallback RPC ${i + 1} failed`);
+    }
+  }
+  
+  throw new Error('All RPC providers failed. Check your internet connection.');
+}
+
 async function checkBalancesAndRequirements() {
   try {
     console.log('🔍 Checking WETH balance and bridge requirements...\n');
     
-    // Connect to Sepolia
-    const provider = new ethers.JsonRpcProvider(config.rpcUrl);
-    const wethContract = new ethers.Contract(config.wethAddress, WETH_ABI, provider);
-    
-    // Check ETH balance
-    const ethBalance = await provider.getBalance(config.userAddress);
-    console.log(`💰 ETH Balance: ${ethers.formatEther(ethBalance)} ETH`);
-    
-    // Check WETH balance
-    const wethBalance = await wethContract.balanceOf(config.userAddress);
-    console.log(`🔗 WETH Balance: ${ethers.formatEther(wethBalance)} WETH`);
-    
-    // Check WETH allowance for bridge
-    const allowance = await wethContract.allowance(config.userAddress, config.bridgeAddress);
-    console.log(`✅ Bridge Allowance: ${ethers.formatEther(allowance)} WETH`);
-    
-    console.log('\n📋 Recommendations:');
-    
-    if (ethBalance < ethers.parseEther("0.01")) {
-      console.log('❌ Need more Sepolia ETH! Get from: https://sepoliafaucet.com/');
-    } else {
-      console.log('✅ ETH balance sufficient');
+    // Check cache first
+    const now = Date.now();
+    if (cache.data && (now - cache.timestamp) < CACHE_DURATION) {
+      console.log('📦 Using cached data (refresh in 30s)...\n');
+      displayResults(cache.data);
+      return cache.data;
     }
     
-    if (wethBalance < ethers.parseEther("0.001")) {
-      console.log('❌ Need to wrap ETH to WETH');
-      console.log('💡 Recommendation: Wrap at least 0.01 ETH to WETH');
-    } else {
-      console.log('✅ WETH balance sufficient');
-    }
+    // Get provider
+    const rpcProvider = await getProvider();
+    const wethContract = new ethers.Contract(config.wethAddress, WETH_ABI, rpcProvider);
     
-    if (allowance < ethers.parseEther("0.001")) {
-      console.log('❌ Need to approve WETH spending for bridge');
-      console.log('💡 Recommendation: Approve at least 0.01 WETH');
-    } else {
-      console.log('✅ Bridge allowance sufficient');
-    }
+    console.log('⚡ Fetching data (parallel calls)...');
+    
+    // Make ALL calls in parallel for maximum speed
+    const [ethBalance, wethBalance, allowance] = await Promise.all([
+      rpcProvider.getBalance(config.userAddress),
+      wethContract.balanceOf(config.userAddress),
+      wethContract.allowance(config.userAddress, config.bridgeAddress)
+    ]);
+    
+    const results = {
+      ethBalance,
+      wethBalance,
+      allowance,
+      timestamp: now
+    };
+    
+    // Cache results
+    cache = { timestamp: now, data: results };
+    
+    displayResults(results);
+    return results;
     
   } catch (error) {
     console.error('❌ Error checking balances:', error.message);
+    
+    if (error.message.includes('network') || error.message.includes('timeout')) {
+      console.log('\n💡 Network troubleshooting:');
+      console.log('   • Check your internet connection');
+      console.log('   • Try again in a few seconds');
+      console.log('   • Some RPC providers may be temporarily down');
+    }
+    
+    if (error.message.includes('RPC')) {
+      console.log('\n🔄 You can also try:');
+      console.log('   • VPN connection if in restricted region');
+      console.log('   • Different network connection');
+    }
+    
+    throw error;
   }
 }
 
-async function generateWrapInstructions() {
-  console.log('\n🔧 Instructions to get WETH for testing:\n');
+function displayResults(results) {
+  const { ethBalance, wethBalance, allowance } = results;
   
-  console.log('1️⃣ Get Sepolia ETH:');
-  console.log('   • Visit: https://sepoliafaucet.com/');
-  console.log('   • Or: https://faucet.quicknode.com/ethereum/sepolia');
-  console.log('   • Connect your wallet and request testnet ETH\n');
+  console.log(`💰 ETH Balance: ${ethers.formatEther(ethBalance)} ETH`);
+  console.log(`🔗 WETH Balance: ${ethers.formatEther(wethBalance)} WETH`);
+  console.log(`✅ Bridge Allowance: ${ethers.formatEther(allowance)} WETH`);
   
-  console.log('2️⃣ Wrap ETH to WETH:');
-  console.log(`   • Visit WETH contract: https://sepolia.etherscan.io/address/${config.wethAddress}`);
-  console.log('   • Go to "Write Contract" tab');
-  console.log('   • Connect your wallet');
-  console.log('   • Use "deposit" function with amount (e.g., 0.01 ETH)\n');
+  console.log('\n📋 Status Check:');
   
-  console.log('3️⃣ Alternative - Use this manual transaction:');
-  console.log(`   • To: ${config.wethAddress}`);
-  console.log('   • Value: 0.01 ETH (or desired amount)');
-  console.log('   • Data: 0xd0e30db0');
-  console.log('   • Gas Limit: 50000\n');
+  const hasEnoughEth = ethBalance >= ethers.parseEther("0.005");
+  const hasEnoughWeth = wethBalance >= ethers.parseEther("0.001");
+  const hasAllowance = allowance >= ethers.parseEther("0.001");
   
-  console.log('4️⃣ Approve WETH for bridge:');
-  console.log(`   • WETH Contract: ${config.wethAddress}`);
-  console.log('   • Function: approve');
+  console.log(`${hasEnoughEth ? '✅' : '❌'} ETH: ${hasEnoughEth ? 'Sufficient' : 'Need more (min 0.005 ETH)'}`);
+  console.log(`${hasEnoughWeth ? '✅' : '❌'} WETH: ${hasEnoughWeth ? 'Sufficient' : 'Need to wrap ETH'}`);
+  console.log(`${hasAllowance ? '✅' : '❌'} Allowance: ${hasAllowance ? 'Approved' : 'Need approval'}`);
+  
+  const readyToBridge = hasEnoughEth && hasEnoughWeth && hasAllowance;
+  console.log(`\n🌉 Bridge Status: ${readyToBridge ? '✅ READY TO BRIDGE!' : '❌ Setup required'}`);
+  
+  if (!readyToBridge) {
+    console.log('\n🔧 Next Steps:');
+    if (!hasEnoughEth) console.log('   1. Get Sepolia ETH from faucet');
+    if (!hasEnoughWeth) console.log('   2. Wrap ETH to WETH');
+    if (!hasAllowance) console.log('   3. Approve WETH for bridge');
+  }
+}
+
+async function generateQuickActions() {
+  console.log('\n⚡ Quick Actions:\n');
+  
+  console.log('🚰 Get Sepolia ETH (choose fastest):');
+  console.log('   • https://sepoliafaucet.com/ (Alchemy)');
+  console.log('   • https://faucet.quicknode.com/ethereum/sepolia');
+  console.log('   • https://www.infura.io/faucet/sepolia\n');
+  
+  console.log('🔗 Quick WETH Wrap:');
+  console.log(`   • Contract: ${config.wethAddress}`);
+  console.log('   • Method: deposit()');
+  console.log('   • Send ETH: 0.01 ETH (or more)');
+  console.log(`   • Quick link: https://sepolia.etherscan.io/address/${config.wethAddress}#writeContract\n`);
+  
+  console.log('✅ Quick Approve:');
+  console.log(`   • Contract: ${config.wethAddress}`);
+  console.log('   • Method: approve()');
   console.log(`   • Spender: ${config.bridgeAddress}`);
-  console.log('   • Amount: 10000000000000000000 (10 WETH in wei)\n');
+  console.log('   • Amount: 10000000000000000000000 (10000 WETH)\n');
   
-  console.log('5️⃣ Test bridge transaction:');
-  console.log('   • Use frontend bridge form');
-  console.log('   • Try bridging 0.001 WETH');
-  console.log('   • Check transaction status\n');
+  console.log('🧪 Test Commands:');
+  console.log('   • Check again: node get-weth-for-testing.js');
+  console.log('   • Wrap helper: node wrap-weth-sepolia.js');
+  console.log('   • Frontend: http://localhost:5173/bridge\n');
 }
 
 async function main() {
-  console.log('🌉 Paralyx Bridge - WETH Testing Helper\n');
-  console.log('========================================\n');
+  const startTime = Date.now();
   
-  await checkBalancesAndRequirements();
-  await generateWrapInstructions();
+  console.log('🌉 Paralyx Bridge - WETH Testing Helper (Optimized)\n');
+  console.log('===================================================\n');
   
-  console.log('💡 Quick Commands:');
-  console.log('   • Check balances: node get-weth-for-testing.js');
-  console.log('   • Wrap script: node wrap-weth-sepolia.js');
-  console.log('   • Bridge test: Use frontend at http://localhost:5173\n');
+  try {
+    await checkBalancesAndRequirements();
+    await generateQuickActions();
+    
+    const duration = Date.now() - startTime;
+    console.log(`⚡ Completed in ${duration}ms`);
+    
+  } catch (error) {
+    console.error('💥 Script failed:', error.message);
+    console.log('\n🔄 Try running again or check network connection');
+    process.exit(1);
+  }
 }
+
+// Clear cache on Ctrl+C
+process.on('SIGINT', () => {
+  console.log('\n👋 Cache cleared, exiting...');
+  process.exit(0);
+});
 
 if (require.main === module) {
   main().catch(console.error);
@@ -120,6 +214,7 @@ if (require.main === module) {
 
 module.exports = {
   checkBalancesAndRequirements,
-  generateWrapInstructions,
+  generateQuickActions,
+  getProvider,
   config
 }; 

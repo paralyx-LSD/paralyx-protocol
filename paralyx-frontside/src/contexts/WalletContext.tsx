@@ -1,5 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import toast from 'react-hot-toast';
+import * as blockchain from '../services/blockchain';
+
+interface Transaction {
+  hash: string;
+  type: 'supply' | 'borrow' | 'repay' | 'withdraw';
+  amount: number;
+  status: 'pending' | 'confirmed' | 'failed';
+  timestamp: Date;
+}
 
 interface WalletContextType {
   isConnected: boolean;
@@ -11,6 +20,16 @@ interface WalletContextType {
   disconnectWallet: () => void;
   switchNetwork: (network: 'testnet' | 'mainnet') => void;
   chainId: string | null;
+  
+  // New blockchain functionality
+  transactions: Transaction[];
+  accountInfo: any;
+  supplyTokens: (amount: number) => Promise<string>;
+  borrowTokens: (amount: number) => Promise<string>;
+  repayTokens: (amount: number) => Promise<string>;
+  withdrawTokens: (amount: number) => Promise<string>;
+  refreshAccountInfo: () => Promise<void>;
+  getBalance: (assetType?: string) => Promise<number>;
 }
 
 const WalletContext = createContext<WalletContextType | undefined>(undefined);
@@ -44,6 +63,8 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   const [network, setNetwork] = useState<'testnet' | 'mainnet'>('testnet');
   const [isConnecting, setIsConnecting] = useState(false);
   const [chainId, setChainId] = useState<string | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [accountInfo, setAccountInfo] = useState<any>(null);
 
   // MetaMask connection
   const connectMetaMask = async () => {
@@ -107,7 +128,7 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       setWalletType('freighter');
       setIsConnected(true);
       toast.success('Freighter connected successfully!');
-    } catch (error) {
+          } catch (error: any) {
       console.error('Freighter connection error:', error);
       if (error.message?.includes('User declined access')) {
         toast.error('Connection rejected by user');

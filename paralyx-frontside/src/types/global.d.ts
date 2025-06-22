@@ -10,8 +10,8 @@ interface Window {
     chainId?: string;
   };
   freighter?: {
-    getPublicKey: (options?: { network?: string }) => Promise<{ publicKey: string }>;
-    signTransaction: (transaction: string) => Promise<{ signature: string }>;
+    getPublicKey: (options: { network: string }) => Promise<{ publicKey: string }>;
+    signTransaction: (xdr: string, options: { network: string }) => Promise<{ signedTxXdr: string }>;
     getNetwork: () => Promise<{ network: string }>;
     isConnected: () => Promise<boolean>;
     requestAccess: () => Promise<{ publicKey: string }>;

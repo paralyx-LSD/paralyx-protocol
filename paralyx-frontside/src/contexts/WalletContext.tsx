@@ -56,6 +56,8 @@ interface WalletContextType {
   // Backward compatibility
   isConnected: boolean;
   walletAddress: string | null;
+  walletType: 'metamask' | 'freighter' | null;
+  disconnectWallet: () => void;
   
   // Stellar lending functions (real implementations)
   supplyTokens: (amount: number, assetType?: string) => Promise<string>;
@@ -94,6 +96,12 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [network, setNetwork] = useState<'testnet' | 'mainnet'>('testnet');
 
+  // Computed properties for backward compatibility
+  const isConnected = ethWallet.isConnected || stellarWallet.isConnected;
+  const walletAddress = stellarWallet.address || ethWallet.address;
+  const walletType = stellarWallet.isConnected ? 'freighter' : 
+                   ethWallet.isConnected ? 'metamask' : null;
+
   // Generic connectWallet function for WalletModal
   const connectWallet = async (type: 'freighter' | 'metamask') => {
     setIsConnecting(true);
@@ -117,10 +125,6 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
       network: newNetwork === 'testnet' ? 'TESTNET' : 'MAINNET'
     }));
   };
-
-  // Backward compatibility computed values
-  const isConnected = ethWallet.isConnected || stellarWallet.isConnected;
-  const walletAddress = ethWallet.address || stellarWallet.address;
 
   // Load persisted wallet connections on mount
   useEffect(() => {
@@ -367,6 +371,13 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     return await stellar.getAssetPrice(assetType);
   };
 
+  // Generic disconnect function for both wallet types
+  const disconnectWallet = () => {
+    // Disconnect both wallets to be safe
+    disconnectEthWallet();
+    disconnectStellarWallet();
+  };
+
   const value: WalletContextType = {
     ethWallet,
     stellarWallet,
@@ -388,6 +399,8 @@ export const WalletProvider: React.FC<WalletProviderProps> = ({ children }) => {
     switchNetwork,
     isConnected,
     walletAddress,
+    walletType,
+    disconnectWallet,
   };
 
   return (

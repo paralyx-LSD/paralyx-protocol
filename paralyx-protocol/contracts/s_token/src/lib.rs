@@ -179,6 +179,21 @@ impl SToken {
     pub fn get_bridge_validator(env: Env) -> Address {
         env.storage().instance().get(&DataKey::BridgeValidator).unwrap()
     }
+
+    /// Public mint function without permission checks (for testing/development)
+    pub fn public_mint(env: Env, to: Address, amount: i128) {
+        // No permission checks - anyone can call this
+        let mut total_supply: i128 = env.storage().instance().get(&DataKey::TotalSupply).unwrap_or(0i128);
+        let mut balance: i128 = env.storage().instance().get(&DataKey::Balance(to.clone())).unwrap_or(0i128);
+
+        total_supply = total_supply + amount;
+        balance = balance + amount;
+
+        env.storage().instance().set(&DataKey::TotalSupply, &total_supply);
+        env.storage().instance().set(&DataKey::Balance(to.clone()), &balance);
+
+        env.events().publish((symbol_short!("pub_mint"), to.clone()), amount);
+    }
 }
 
 mod test; 

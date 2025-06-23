@@ -43,6 +43,9 @@ Paralyx Protocol addresses the capital inefficiency problem in the liquid stakin
 - **Automated Operations**: Benefit from automated liquidation mechanisms and dynamic interest rates
 - **Cost Efficiency**: Leverage Stellar's sub-penny transaction fees for DeFi operations
 
+<img width="1720" alt="Ekran Resmi 2025-06-23 05 58 08" src="https://github.com/user-attachments/assets/e2c02d78-cb53-469d-8ba6-7dbed9213389" />
+
+
 ## Project Status
 
 ### Current Development Phase: Bridge Operations Testing (80% Complete)
@@ -157,6 +160,12 @@ Ethereum Network          Bridge Infrastructure          Stellar Network
 - **Multi-Asset Support**: stETH, wstETH, WETH with modular expansion capability
 - **Emergency Controls**: Pause mechanisms and administrative override capabilities
 - **NEW: Bridge Minting**: Real cross-chain token minting working with production infrastructure
+
+<img width="30%" alt="Ekran Resmi 2025-06-23 05 59 16" src="https://github.com/user-attachments/assets/8e04f8b4-284b-4552-9c14-598e5cf5c527" />
+<img width="30%" alt="Ekran Resmi 2025-06-23 05 58 41" src="https://github.com/user-attachments/assets/f7074d57-a5e8-4c56-aa2a-812df748622a" />
+<img width="30%" alt="Ekran Resmi 2025-06-23 06 01 00" src="https://github.com/user-attachments/assets/c3777d21-770d-4d24-a924-deeaf2d26575" />
+
+
 
 ### Advanced Lending Protocol
 - **Over-collateralized Lending**: 60% LTV ratio for conservative risk management

@@ -14,6 +14,9 @@
 
 A decentralized cross-chain lending protocol that bridges Ethereum's Liquid Staking Derivatives (LSDs) to Stellar's high-speed, low-cost infrastructure. Paralyx unlocks the potential of $40+ billion in Ethereum LSDs by enabling them as collateral in a sophisticated lending market on Stellar.
 
+## Demo
+https://youtu.be/Tg3F3OxfDiM
+
 ## Table of Contents
 
 1. [Overview](#overview)
